@@ -1277,6 +1277,13 @@ Be concise and speak naturally like a real AI assistant."""
     import json
     context_prompt += f"\n\n[USER PROFILE EPISODIC MEMORY]\n{json.dumps(profile, indent=2)}\n(Use this to remember who you are talking to and what they like)."
 
+    # Inject Custom Trained Rules / Instructions
+    custom_rules = profile.get("custom_instructions", [])
+    if custom_rules:
+        context_prompt += "\n\n[CUSTOM USER TRAINED INSTRUCTIONS - MUST FOLLOW MANDATORILY]\n"
+        for rule in custom_rules:
+            context_prompt += f"- {rule}\n"
+
     if memory_context:
         context_prompt += f"\n\nPast context:\n{memory_context}"
 

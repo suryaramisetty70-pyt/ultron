@@ -18,23 +18,36 @@ class UltronMemory:
         
         # Episodic User Profile
         self.profile_path = "user_profile.json"
-        if os.path.exists(self.profile_path):
-            with open(self.profile_path, "r") as f:
-                self.user_profile = json.load(f)
-        else:
-            self.user_profile = {"preferences": {}}
-            self._save_profile()
+        if not os.path.exists(self.profile_path):
+            self._save_profile_data({"preferences": {}, "custom_instructions": []})
             
         print("[Ultron Memory] Vector Database Online.")
 
-    def _save_profile(self):
-        with open(self.profile_path, "w") as f:
-            json.dump(self.user_profile, f, indent=4)
+    @property
+    def user_profile(self):
+        """Dynamically read profile from disk so external API modifications are captured instantly."""
+        if os.path.exists(self.profile_path):
+            try:
+                with open(self.profile_path, "r") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+        return {"preferences": {}, "custom_instructions": []}
+
+    def _save_profile_data(self, data):
+        try:
+            with open(self.profile_path, "w") as f:
+                json.dump(data, f, indent=4)
+        except Exception as e:
+            print(f"[Ultron Memory] Failed to save profile: {e}")
             
     def update_user_preference(self, key, value):
         """Updates a specific preference in the episodic memory."""
-        self.user_profile["preferences"][key] = value
-        self._save_profile()
+        profile = self.user_profile
+        if "preferences" not in profile:
+            profile["preferences"] = {}
+        profile["preferences"][key] = value
+        self._save_profile_data(profile)
         return f"Memory Updated: I will remember that your {key} is {value} forever."
         
     def log_interaction(self, user_input, ai_response):
