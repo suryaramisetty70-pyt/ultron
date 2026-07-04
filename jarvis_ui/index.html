@@ -1,0 +1,194 @@
+```html
+<!DOCTYPE html>
+<html>
+<head>
+<title>IRON MAN HUD</title>
+
+<style>
+body {
+    margin: 0;
+    overflow: hidden;
+    background: black;
+}
+
+#status {
+    position: absolute;
+    bottom: 40px;
+    width: 100%;
+    text-align: center;
+    font-size: 26px;
+    color: #00ffff;
+    font-family: Arial;
+    letter-spacing: 2px;
+}
+</style>
+
+</head>
+
+<body>
+
+<div id="status">Idle</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<script>
+
+let scene = new THREE.Scene();
+
+let camera = new THREE.PerspectiveCamera(
+    75,
+    window.innerWidth/window.innerHeight,
+    0.1,
+    1000
+);
+camera.position.z = 8;
+
+let renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+
+// ================= CORE =================
+
+let core = new THREE.Mesh(
+    new THREE.SphereGeometry(0.6, 32, 32),
+    new THREE.MeshBasicMaterial({ color: 0x00ffff })
+);
+scene.add(core);
+
+
+// ================= GLOW =================
+
+let glow = new THREE.Mesh(
+    new THREE.SphereGeometry(1.2, 32, 32),
+    new THREE.MeshBasicMaterial({
+        color: 0x00ffff,
+        transparent: true,
+        opacity: 0.15
+    })
+);
+scene.add(glow);
+
+
+// ================= RINGS =================
+
+function createRing(size, thickness) {
+    return new THREE.Mesh(
+        new THREE.TorusGeometry(size, thickness, 16, 100),
+        new THREE.MeshBasicMaterial({ color: 0x00ffff })
+    );
+}
+
+let rings = [
+    createRing(1.8, 0.03),
+    createRing(2.5, 0.02),
+    createRing(3.2, 0.015),
+    createRing(4.0, 0.01)
+];
+
+rings.forEach(r => scene.add(r));
+
+rings[1].rotation.x = Math.PI / 2;
+rings[2].rotation.y = Math.PI / 2;
+
+
+// ================= PARTICLES =================
+
+let stars = [];
+let starGeo = new THREE.SphereGeometry(0.02, 8, 8);
+let starMat = new THREE.MeshBasicMaterial({ color: 0x00ffff });
+
+for (let i = 0; i < 200; i++) {
+    let star = new THREE.Mesh(starGeo, starMat);
+
+    star.position.x = (Math.random() - 0.5) * 20;
+    star.position.y = (Math.random() - 0.5) * 20;
+    star.position.z = (Math.random() - 0.5) * 20;
+
+    scene.add(star);
+    stars.push(star);
+}
+
+
+// ================= RADAR =================
+
+let sweep = new THREE.Mesh(
+    new THREE.CircleGeometry(4.5, 50),
+    new THREE.MeshBasicMaterial({
+        color: 0x00ffff,
+        transparent: true,
+        opacity: 0.05
+    })
+);
+
+sweep.rotation.x = -Math.PI / 2;
+scene.add(sweep);
+
+
+// ================= ANIMATION =================
+
+function animate() {
+    requestAnimationFrame(animate);
+
+    core.scale.setScalar(1 + Math.sin(Date.now()*0.004)*0.1);
+    glow.scale.setScalar(core.scale.x + 0.3);
+
+    rings[0].rotation.x += 0.02;
+    rings[0].rotation.y += 0.01;
+
+    rings[1].rotation.z += 0.02;
+    rings[2].rotation.x += 0.015;
+    rings[3].rotation.y += 0.01;
+
+    sweep.rotation.z += 0.02;
+
+    stars.forEach(s => {
+        s.rotation.x += 0.01;
+        s.rotation.y += 0.01;
+    });
+
+    renderer.render(scene, camera);
+}
+
+animate();
+
+
+// ================= STATE =================
+
+async function updateState() {
+    try {
+        let res = await fetch("http://127.0.0.1:5000/state");
+        let data = await res.json();
+
+        document.getElementById("status").innerText = data.state;
+
+        let color = 0x00ffff;
+
+        if (data.state === "Listening") color = 0x00ff00;
+        else if (data.state === "Thinking") color = 0xffff00;
+        else if (data.state === "Speaking") color = 0x00ffff;
+
+        core.material.color.set(color);
+        glow.material.color.set(color);
+
+        rings.forEach(r => r.material.color.set(color));
+
+    } catch {}
+}
+
+setInterval(updateState, 300);
+
+
+// ================= RESIZE =================
+
+window.addEventListener("resize", () => {
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    camera.aspect = window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+});
+
+</script>
+
+</body>
+</html>
+```

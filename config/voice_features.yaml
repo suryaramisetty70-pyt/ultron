@@ -1,0 +1,76 @@
+# ================================================
+# Ultron Voice & Audio Features Configuration
+# Phase 28
+# ================================================
+
+# Master toggles for each sub-feature
+features:
+  voice_interruption: true    # VAD-based mid-speech stop
+  emotion_modulation: true    # Emotion-aware TTS pitch/rate
+  voice_macros: true          # Spoken phrase -> command mapping
+  noise_adapter: false        # Auto-adjust volume to ambient noise (CPU intensive)
+  site_blocker: true          # Focus-mode site blocking
+  clipboard_butler: true      # Auto-extract emails/URLs from clipboard
+  pdf_summarizer: true        # Offline PDF text summarization
+  workspace_spawner: true     # Open predefined workspace sets
+
+# Voice Interruption (Silero VAD)
+voice_interruption_config:
+  vad_threshold: 0.5
+  sample_rate: 16000
+
+# Emotion Modulation
+emotion_modulation_config:
+  default_voice: "en-US-ChristopherNeural"
+  default_emotion: "neutral"
+
+# Noise Adapter
+noise_adapter_config:
+  threshold_db: 60
+  base_volume: 0.5
+  check_interval_seconds: 2
+
+# Voice Macros (custom spoken triggers)
+voice_macros:
+  "open calculator": "calc"
+  "open notepad": "notepad"
+  "open browser": "start chrome"
+  "open vs code": "code"
+  "lock my pc": "rundll32.exe user32.dll,LockWorkStation"
+  "take a screenshot": "snippingtool"
+  "open terminal": "wt"
+
+# Site Blocker
+site_blocker_config:
+  default_sites:
+    - youtube.com
+    - www.youtube.com
+    - reddit.com
+    - www.reddit.com
+    - twitter.com
+    - x.com
+    - instagram.com
+    - www.instagram.com
+    - facebook.com
+    - www.facebook.com
+    - tiktok.com
+    - www.tiktok.com
+
+# PDF Summarizer
+pdf_summarizer_config:
+  default_sentences: 5
+
+# Workspace Spawner presets
+workspace_spawner_config:
+  workspaces:
+    coding:
+      folders:
+        - "~/OneDrive/Desktop/BUUDY_AI"
+      urls:
+        - "https://github.com"
+      apps:
+        - "code"
+    research:
+      urls:
+        - "https://scholar.google.com"
+        - "https://arxiv.org"

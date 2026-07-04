@@ -1,0 +1,63 @@
+# Virtual Environment
+.venv/
+venv/
+env/
+
+# Node modules
+node_modules/
+whatsapp_bot/node_modules/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment & Secrets
+.env
+token.json
+token.pickle
+credentials.json
+
+# OS
+desktop.ini
+Thumbs.db
+.DS_Store
+
+# Temp files
+*.mp3
+*.wav
+response.mp3
+input.wav
+emotion_output.mp3
+
+# Models (too large for GitHub)
+model/
+vosk-model/
+hand_landmarker.task
+
+# Data
+ultron_chroma_db/
+memory/
+analytics_data.json
+brain.json
+conversation_memory.json
+clipboard_butler_log.json
+PyWhatKit_DB.txt
+user_profile.json
+contacts.json
+
+# Exports
+exports/
+
+# Generated
+generated_code/

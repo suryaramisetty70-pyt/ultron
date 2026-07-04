@@ -1,0 +1,19 @@
+{
+  "theme": "dark",
+  "color": "blue",
+  "title": "Ultron Core Analytics",
+  "widgets": [
+    {
+      "type": "label",
+      "text": "SYSTEM ONLINE"
+    },
+    {
+      "type": "label",
+      "text": "Waiting for biometric input..."
+    },
+    {
+      "type": "button",
+      "text": "Manual Override"
+    }
+  ]
+}
