@@ -146,6 +146,7 @@ class UltronVision(multiprocessing.Process):
                             history_zoom.clear()
                 
                 # Hand tracking for mouse (hand 0) and volume (hand 1)
+                is_two_handed = len(detection_result.hand_landmarks) == 2
                 for hand_idx, hand_landmarks in enumerate(detection_result.hand_landmarks):
                     if hand_idx == 0:
                         # PRIMARY HAND: MOUSE CONTROL
@@ -176,29 +177,52 @@ class UltronVision(multiprocessing.Process):
                                 swipe_cooldown = 30
                                 history_x.clear()
                         
-                        # Apply Exponential Moving Average (EMA) for butter-smooth movement
-                        if smooth_x == 0 and smooth_y == 0:
-                            smooth_x, smooth_y = target_x, target_y
-                        else:
-                            smooth_x = smooth_x + (target_x - smooth_x) * smoothing_factor
-                            smooth_y = smooth_y + (target_y - smooth_y) * smoothing_factor
-                        
-                        # INSTANT BARE-METAL MOUSE MOVE
-                        user32.SetCursorPos(int(smooth_x), int(smooth_y))
+                        # Only execute cursor move and click events if we are not in two-handed gesture modes
+                        if not is_two_handed:
+                            # Apply Exponential Moving Average (EMA) for butter-smooth movement
+                            if smooth_x == 0 and smooth_y == 0:
+                                smooth_x, smooth_y = target_x, target_y
+                            else:
+                                smooth_x = smooth_x + (target_x - smooth_x) * smoothing_factor
+                                smooth_y = smooth_y + (target_y - smooth_y) * smoothing_factor
                             
-                        dist_left = self.calculate_distance(index_tip, thumb_tip)
-                        dist_right = self.calculate_distance(middle_tip, thumb_tip)
-                        dist_double = self.calculate_distance(ring_tip, thumb_tip)
-                        
-                        # GRAB & DRAG (Index + Thumb) OR PHYSICAL DESK TOUCH (Bottom 15% of camera frame)
-                        if dist_left < 0.05 or index_tip.y > 0.85:
-                            if not is_left_clicking:
-                                user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
-                                is_left_clicking = True
-                        else:
-                            if is_left_clicking:
-                                user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
-                                is_left_clicking = False
+                            # INSTANT BARE-METAL MOUSE MOVE
+                            user32.SetCursorPos(int(smooth_x), int(smooth_y))
+                                
+                            dist_left = self.calculate_distance(index_tip, thumb_tip)
+                            dist_right = self.calculate_distance(middle_tip, thumb_tip)
+                            dist_double = self.calculate_distance(ring_tip, thumb_tip)
+                            
+                            # GRAB & DRAG (Index + Thumb) OR PHYSICAL DESK TOUCH (Bottom 15% of camera frame)
+                            if dist_left < 0.05 or index_tip.y > 0.85:
+                                if not is_left_clicking:
+                                    user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+                                    is_left_clicking = True
+                            else:
+                                if is_left_clicking:
+                                    user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+                                    is_left_clicking = False
+
+                            # RIGHT CLICK (Middle + Thumb)
+                            if dist_right < 0.05:
+                                if not is_right_clicking:
+                                    user32.mouse_event(MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, 0)
+                                    user32.mouse_event(MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0)
+                                    is_right_clicking = True
+                            else:
+                                is_right_clicking = False
+
+                            # DOUBLE CLICK (Ring + Thumb)
+                            if dist_double < 0.05:
+                                if not is_double_clicking:
+                                    user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+                                    user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+                                    time.sleep(0.05)
+                                    user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+                                    user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+                                    is_double_clicking = True
+                            else:
+                                is_double_clicking = False
 
                     elif hand_idx == 1 and self.volume:
                         # SECONDARY HAND: AIR-VOLUME DIAL
@@ -219,27 +243,6 @@ class UltronVision(multiprocessing.Process):
                         cv2.rectangle(frame, (50, 150), (85, 400), (0, 255, 0), 3)
                         cv2.rectangle(frame, (50, int(vol_bar)), (85, 400), (0, 255, 0), cv2.FILLED)
                         cv2.putText(frame, f'{int(vol_per)} %', (40, 450), cv2.FONT_HERSHEY_COMPLEX, 1, (0, 255, 0), 3)
-
-                        # RIGHT CLICK (Middle + Thumb)
-                        if dist_right < 0.05:
-                            if not is_right_clicking:
-                                user32.mouse_event(MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, 0)
-                                user32.mouse_event(MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0)
-                                is_right_clicking = True
-                        else:
-                            is_right_clicking = False
-
-                        # DOUBLE CLICK (Ring + Thumb)
-                        if dist_double < 0.05:
-                            if not is_double_clicking:
-                                user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
-                                user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
-                                time.sleep(0.05)
-                                user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
-                                user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
-                                is_double_clicking = True
-                        else:
-                            is_double_clicking = False
 
             # --- PHASE 24: JARVIS EYE-POINTER (Gaze Tracking) ---
             # Process Face Mesh to find Irises
