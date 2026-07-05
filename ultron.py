@@ -1355,6 +1355,7 @@ Be concise and speak naturally like a real AI assistant."""
 # ==================================================
 def proactive_loop():
     """Runs silently in the background and occasionally initiates conversation."""
+    from datetime import datetime
     has_said_morning = False
     has_said_night = False
     
