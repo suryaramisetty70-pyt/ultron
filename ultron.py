@@ -176,6 +176,16 @@ def listen():
         
         # 2. Record High-Fidelity Audio
         recognizer_sr = sr.Recognizer()
+        try:
+            profile = get_memory_instance().user_profile
+            threshold = profile.get("preferences", {}).get("mic_energy_threshold")
+            if threshold is not None:
+                recognizer_sr.energy_threshold = int(threshold)
+                print(f"[SYSTEM] Loaded trained mic sensitivity threshold: {threshold}")
+        except Exception:
+            pass
+        recognizer_sr.dynamic_energy_threshold = True
+        
         with sr.Microphone() as source:
             try:
                 audio = recognizer_sr.listen(source, timeout=3, phrase_time_limit=10)
@@ -258,6 +268,7 @@ from buddy_ai.skills.productivity_engine import read_clipboard_butler, spawn_wor
 from buddy_ai.skills.media_engine import generate_video_subtitles, get_local_news_briefing, start_meeting_recorder
 from buddy_ai.skills.security_engine_v2 import scan_unsafe_ports, check_password_leak, check_bluetooth_proximity
 from buddy_ai.skills.voice_vision_v2 import trigger_voice_macro, control_media, live_translator
+from buddy_ai.skills.mic_calibration import calibrate_microphone
 
 def launch_liquid_ui():
     import subprocess
@@ -345,6 +356,7 @@ TOOL_EXECUTOR = {
     "trigger_voice_macro": lambda args: trigger_voice_macro(args.get("macro_name")),
     "control_media": lambda args: control_media(args.get("action")),
     "live_translator": lambda args: live_translator(args.get("text"), args.get("target_lang")),
+    "calibrate_microphone": lambda args: calibrate_microphone(args.get("duration", 3.0)),
 }
 
 # ==================================================
@@ -1214,6 +1226,22 @@ TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {}
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "calibrate_microphone",
+            "description": "Calibrate the microphone and train listening threshold by recording room background noise for a given duration. Use this when the user asks you to train voice/mic, or calibrate listening capability.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "duration": {
+                        "type": "number",
+                        "description": "Duration in seconds to record background room noise. Default is 3.0."
+                    }
+                }
             }
         }
     }
