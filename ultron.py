@@ -140,7 +140,8 @@ def speak(text):
 def listen():
     global stop_speaking
     print("\n[Listening 24/7 for 'Ultron' or 'Stop'...] ")
-    recognizer = vosk.KaldiRecognizer(vosk_model, 16000)
+    # Optimization: constrain vocabulary to only target keywords to boost sensitivity and accuracy
+    recognizer = vosk.KaldiRecognizer(vosk_model, 16000, '["ultron", "stop", "[unk]"]')
     
     wake_word_detected = False
     
@@ -159,6 +160,7 @@ def listen():
                 text = result.get("text", "")
                 
                 if text:
+                    print(f"[Auditory System] Heard: '{text}'")
                     # Check for "Stop" interrupt
                     if not stop_speaking and pygame.mixer.get_init() and pygame.mixer.music.get_busy():
                         if "stop" in text:
