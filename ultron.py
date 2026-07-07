@@ -17,7 +17,7 @@ import time
 import socket
 from datetime import datetime
 
-from buddy_ai.ultron_vision import UltronVision
+# from buddy_ai.ultron_vision import UltronVision
 from buddy_ai.ultron_memory import UltronMemory, get_memory_instance, update_user_preference
 from buddy_ai.ultron_mobile import UltronMobileUplink
 
