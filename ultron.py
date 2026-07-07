@@ -239,7 +239,7 @@ def listen():
                 send_hud_state("thinking", command)
             return command
         else:
-            print("Whisper API Error")
+            print(f"[Auditory System] Whisper API Error {response.status_code}: {response.text}")
             send_hud_state("standby", "")
             return ""
 
