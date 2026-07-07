@@ -7,8 +7,13 @@ import json
 class UltronMemory:
     def __init__(self, db_path="ultron_chroma_db"):
         print("[Ultron Memory] Initializing Vector Database...")
-        # Persist ChromaDB locally
-        self.client = chromadb.PersistentClient(path=db_path)
+        # Try to use a persistent client; if it fails (Rust panic) fall back to an in‑memory client.
+        try:
+            self.client = chromadb.PersistentClient(path=db_path)
+        except BaseException as e:
+            print(f"[Ultron Memory] Persistent client failed ({e}); switching to in‑memory client.")
+            # Use a safe in‑memory client with minimal settings.
+            self.client = chromadb.Client(Settings(anonymized_telemetry=False))
         
         # Get or create a collection for conversation history
         self.collection = self.client.get_or_create_collection(
