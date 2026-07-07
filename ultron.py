@@ -247,7 +247,7 @@ from buddy_ai.skills.search import search_files
 from buddy_ai.skills.computer_use import move_mouse, click_mouse, type_text, press_shortcut
 from buddy_ai.skills.code_interpreter import execute_python
 from buddy_ai.skills.fetch_news import fetch_breaking_news
-from buddy_ai.skills.document_reader import read_pdf
+from buddy_ai.skills.document_reader import read_large_document as read_pdf
 from buddy_ai.skills.super_os import delete_path, copy_path, move_path, list_directory
 from buddy_ai.skills.email_agent import send_email, check_inbox, draft_email
 from buddy_ai.skills.auto_coder import test_python_file, scan_python_project
