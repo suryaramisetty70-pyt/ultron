@@ -150,8 +150,9 @@ def listen():
     print("\n" + "="*50)
     print(" >>> 🟢 ULTRON STANDBY: SAY 'ULTRON' TO WAKE ME UP... 🟢 <<<")
     print("="*50 + "\n")
-    # Optimization: constrain vocabulary to only target keywords to boost sensitivity and accuracy
-    recognizer = vosk.KaldiRecognizer(vosk_model, 16000, '["ultron", "stop", "[unk]"]')
+    # Optimization: constrain vocabulary to only target keywords to boost sensitivity and accuracy.
+    # Include phonetic variants of 'Ultron' (e.g. ultra, ulton, alton, eltron) in case of accents or local pronunciations.
+    recognizer = vosk.KaldiRecognizer(vosk_model, 16000, '["ultron", "ultra", "ulton", "alton", "eltron", "all turn", "old run", "stop", "[unk]"]')
     
     wake_word_detected = False
     
@@ -170,17 +171,23 @@ def listen():
                 text = result.get("text", "")
                 
                 if text:
-                    print(f"[Auditory System] Heard: '{text}'")
+                    print(f"\n[Auditory System] Heard: '{text}'")
                     # Check for "Stop" interrupt
                     if not stop_speaking and pygame.mixer.get_init() and pygame.mixer.music.get_busy():
                         if "stop" in text:
                             stop_speaking = True
                             return ""
                     
-                    # Check for Wake Word
-                    if "ultron" in text:
+                    # Check for Wake Word (phonetically robust matching)
+                    if any(w in text for w in ["ultron", "ultra", "ulton", "alton", "eltron", "all turn", "old run"]):
                         wake_word_detected = True
                         break
+            else:
+                partial = json.loads(recognizer.PartialResult())
+                partial_text = partial.get("partial", "")
+                if partial_text:
+                    sys.stdout.write(f"\r[Auditory System] Hearing: '{partial_text}'... ")
+                    sys.stdout.flush()
                         
     if wake_word_detected:
         print("\n" + "="*50)
