@@ -86,3 +86,35 @@ def check_inbox(limit: int = 5) -> str:
         return result_text
     except Exception as e:
         return f"Failed to read inbox: {str(e)}"
+
+def draft_email(to_address: str, subject: str, body: str) -> str:
+    """Creates a draft email in the Gmail Drafts folder."""
+    import time
+    if GMAIL_APP_PASSWORD == "your_app_password":
+        return "ERROR: Gmail App Password not configured in .env file."
+        
+    try:
+        mail = imaplib.IMAP4_SSL('imap.gmail.com')
+        mail.login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
+        
+        # Create MIME message
+        msg = MIMEMultipart()
+        msg['From'] = GMAIL_ADDRESS
+        msg['To'] = to_address
+        msg['Subject'] = subject
+        msg.attach(MIMEText(body, 'plain'))
+        
+        # Append to Drafts folder (Gmail usually uses '[Gmail]/Drafts' or 'Drafts')
+        try:
+            mail.append('[Gmail]/Drafts', '', imaplib.Time2Internaldate(time.time()), msg.as_bytes())
+        except Exception:
+            try:
+                mail.append('Drafts', '', imaplib.Time2Internaldate(time.time()), msg.as_bytes())
+            except Exception as e2:
+                mail.logout()
+                return f"Failed to append draft to IMAP folder: {e2}"
+            
+        mail.logout()
+        return f"SUCCESS: Email draft created for {to_address} with subject: {subject}."
+    except Exception as e:
+        return f"Failed to draft email: {str(e)}"
