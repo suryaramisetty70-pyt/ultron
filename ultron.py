@@ -1,8 +1,16 @@
+import os
+import sys
+
+# Silence Pygame greeting and TensorFlow logs immediately
+os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "hide"
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
+import warnings
+warnings.filterwarnings("ignore")
+
 import asyncio
 import edge_tts
 import pygame
-import os
-import sys
 import speech_recognition as sr
 import requests
 import subprocess
@@ -139,7 +147,9 @@ def speak(text):
 # ==================================================
 def listen():
     global stop_speaking
-    print("\n[Listening 24/7 for 'Ultron' or 'Stop'...] ")
+    print("\n" + "="*50)
+    print(" >>> 🟢 ULTRON STANDBY: SAY 'ULTRON' TO WAKE ME UP... 🟢 <<<")
+    print("="*50 + "\n")
     # Optimization: constrain vocabulary to only target keywords to boost sensitivity and accuracy
     recognizer = vosk.KaldiRecognizer(vosk_model, 16000, '["ultron", "stop", "[unk]"]')
     
@@ -173,7 +183,9 @@ def listen():
                         break
                         
     if wake_word_detected:
-        print("\n[Ultron Woke Up!] Listening for command...")
+        print("\n" + "="*50)
+        print(" >>> 🎙️ WOKE UP! SPEAK YOUR COMMAND NOW... 🎙️ <<<")
+        print("="*50 + "\n")
         send_hud_state("listening", "Listening for command...")
         
         # 2. Record High-Fidelity Audio
@@ -1439,8 +1451,8 @@ def main():
     print("[SYSTEM] Booting Global Ghostwriter & Voice Dictation...")
     import subprocess
     import sys
-    subprocess.Popen([sys.executable, "buddy_ai/skills/ghostwriter.py"])
-    subprocess.Popen([sys.executable, "buddy_ai/skills/voice_dictation.py"])
+    subprocess.Popen([sys.executable, "buddy_ai/skills/ghostwriter.py"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.Popen([sys.executable, "buddy_ai/skills/voice_dictation.py"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     
     print("[SYSTEM] Booting Wake-Word Engine...")
     # Commented out duplicate background wake-word engine to prevent microphone access conflicts
@@ -1490,7 +1502,7 @@ def main():
     
     # 0. Start Holographic HUD
     try:
-        subprocess.Popen([sys.executable, "buddy_ai/ultron_hud.py"])
+        subprocess.Popen([sys.executable, "buddy_ai/ultron_hud.py"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception as e:
         print(f"Failed to start HUD: {e}")
         
