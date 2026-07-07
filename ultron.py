@@ -1441,8 +1441,9 @@ def main():
     subprocess.Popen([sys.executable, "buddy_ai/skills/voice_dictation.py"])
     
     print("[SYSTEM] Booting Wake-Word Engine...")
-    from buddy_ai.skills.wake_word import start_wake_word_engine
-    start_wake_word_engine()
+    # Commented out duplicate background wake-word engine to prevent microphone access conflicts
+    # from buddy_ai.skills.wake_word import start_wake_word_engine
+    # start_wake_word_engine()
 
     # ==================================================
     # PHASE 28: VOICE & AUDIO FEATURES
