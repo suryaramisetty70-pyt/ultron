@@ -1476,6 +1476,7 @@ def main():
 
     import argparse
     parser = argparse.ArgumentParser(description="Ultron AI Assistant")
+    parser.add_argument("--text", action="store_true", help="Run in text-only CLI mode without voice inputs.")
     args = parser.parse_args()
 
     print("=========================================")
