@@ -3,8 +3,6 @@ Security Engine (Intruder Lock)
 Uses DeepFace to verify the user's face. If it fails, locks the PC and emails the intruder's photo.
 """
 
-import cv2
-from deepface import DeepFace
 import ctypes
 import time
 import os
@@ -15,6 +13,9 @@ def activate_intruder_lock(baseline_image_path="baseline_face.jpg") -> str:
     """
     Scans the webcam. If the face doesn't match the baseline, locks the PC and emails a photo.
     """
+    # Lazy import - only load heavy DeepFace+TensorFlow when this skill is actually triggered
+    import cv2
+    from deepface import DeepFace
     if not os.path.exists(baseline_image_path):
         return f"ERROR: Baseline image '{baseline_image_path}' not found. Run capture_baseline.py first."
         
