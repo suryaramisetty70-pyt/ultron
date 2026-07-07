@@ -222,16 +222,23 @@ def listen():
         headers = {
             "Authorization": f"Bearer {GROQ_API_KEY.strip()}"
         }
-        with open(temp_audio_path, "rb") as audio_file:
-            files = {
-                "file": ("audio.wav", audio_file, "audio/wav"),
-                "model": (None, "whisper-large-v3-turbo")
-            }
-            response = requests.post("https://api.groq.com/openai/v1/audio/transcriptions", headers=headers, files=files)
-            
-        os.remove(temp_audio_path)
         
-        if response.status_code == 200:
+        response = None
+        try:
+            with open(temp_audio_path, "rb") as audio_file:
+                files = {
+                    "file": ("audio.wav", audio_file, "audio/wav"),
+                    "model": (None, "whisper-large-v3-turbo")
+                }
+                response = requests.post("https://api.groq.com/openai/v1/audio/transcriptions", headers=headers, files=files, timeout=10)
+        except Exception as e:
+            print(f"[Auditory System] Groq request connection error: {e}")
+            
+        use_gemini_fallback = (response is None or response.status_code != 200)
+        
+        if not use_gemini_fallback:
+            if os.path.exists(temp_audio_path):
+                os.remove(temp_audio_path)
             result = response.json()
             command = result.get("text", "").strip()
             print(f"You: {command}")
@@ -239,9 +246,51 @@ def listen():
                 send_hud_state("thinking", command)
             return command
         else:
-            print(f"[Auditory System] Whisper API Error {response.status_code}: {response.text}")
-            send_hud_state("standby", "")
-            return ""
+            status_code = response.status_code if response else "NO_RESPONSE"
+            error_text = response.text if response else "Timeout/Connection Failed"
+            print(f"[Auditory System] Groq Whisper failed (Status {status_code}: {error_text}). Switching to Google Gemini Fallback...")
+            
+            google_key = os.environ.get("GOOGLE_AI_KEY", "").strip()
+            if not google_key:
+                print("[Auditory System] Google Gemini fallback key (GOOGLE_AI_KEY) is missing. Unable to transcribe.")
+                if os.path.exists(temp_audio_path):
+                    os.remove(temp_audio_path)
+                send_hud_state("standby", "")
+                return ""
+            
+            try:
+                import google.generativeai as genai
+                genai.configure(api_key=google_key)
+                
+                print("[Auditory System] Uploading audio to Google...")
+                audio_file_upload = genai.upload_file(path=temp_audio_path)
+                
+                print("[Auditory System] Transcribing via Google Gemini Flash...")
+                model = genai.GenerativeModel("gemini-1.5-flash")
+                response_gemini = model.generate_content([
+                    "Please transcribe the following audio recording exactly as spoken. Do not add any commentary, notes, or explanations.",
+                    audio_file_upload
+                ])
+                command = response_gemini.text.strip()
+                
+                # Clean up
+                try:
+                    audio_file_upload.delete()
+                except Exception:
+                    pass
+                if os.path.exists(temp_audio_path):
+                    os.remove(temp_audio_path)
+                
+                print(f"You (Gemini): {command}")
+                if command:
+                    send_hud_state("thinking", command)
+                return command
+            except Exception as e:
+                print(f"[Auditory System] Google Gemini transcription fallback failed: {e}")
+                if os.path.exists(temp_audio_path):
+                    os.remove(temp_audio_path)
+                send_hud_state("standby", "")
+                return ""
 
 # ==================================================
 # SKILL IMPORTS
@@ -1349,15 +1398,46 @@ Be concise and speak naturally like a real AI assistant."""
     }
 
     # 1. First Pass (Planning & Tool Calling)
-    response = requests.post(
-        "https://api.groq.com/openai/v1/chat/completions",
-        headers=headers,
-        json=payload,
-        timeout=20
-    )
+    response = None
+    try:
+        response = requests.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=20
+        )
+    except Exception as e:
+        print(f"[Agent Brain] Groq Chat connection error: {e}")
+        
+    use_gemini_brain = (response is None or response.status_code != 200)
 
-    if response.status_code != 200:
-        return "AI request failed."
+    if use_gemini_brain:
+        print("[Agent Brain] Groq Chat API failed. Switching to Google Gemini Brain Fallback...")
+        google_key = os.environ.get("GOOGLE_AI_KEY", "").strip()
+        if not google_key:
+            return "AI brain offline. Both Groq and Gemini API keys are invalid or missing."
+        
+        try:
+            import google.generativeai as genai
+            genai.configure(api_key=google_key)
+            model = genai.GenerativeModel("gemini-1.5-flash")
+            
+            # Format message history for Gemini text generation prompt
+            prompt_parts = []
+            for msg in messages:
+                if msg["role"] == "user":
+                    prompt_parts.append(f"User: {msg['content']}")
+                elif msg["role"] == "assistant" and msg.get("content"):
+                    prompt_parts.append(f"Ultron: {msg['content']}")
+            
+            response_gemini = model.generate_content(
+                prompt_parts,
+                generation_config={"response_mime_type": "text/plain"},
+                system_instruction=context_prompt
+            )
+            return response_gemini.text.strip()
+        except Exception as e:
+            return f"Failed to route request through Gemini brain: {e}"
 
     response_data = response.json()["choices"][0]["message"]
     
