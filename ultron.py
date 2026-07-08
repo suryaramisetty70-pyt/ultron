@@ -1543,7 +1543,10 @@ Be concise and speak naturally like a real AI assistant."""
         try:
             import google.generativeai as genai
             genai.configure(api_key=google_key)
-            model = genai.GenerativeModel("gemini-1.5-flash")
+            model = genai.GenerativeModel(
+                model_name="gemini-1.5-flash",
+                system_instruction=context_prompt
+            )
             
             # Format message history for Gemini text generation prompt
             prompt_parts = []
@@ -1551,12 +1554,11 @@ Be concise and speak naturally like a real AI assistant."""
                 if msg["role"] == "user":
                     prompt_parts.append(f"User: {msg['content']}")
                 elif msg["role"] == "assistant" and msg.get("content"):
-                    prompt_parts.append(f"Ultron: {msg['content']}")
+                    prompt_parts.append(f"Vision: {msg['content']}")
             
             response_gemini = model.generate_content(
                 prompt_parts,
-                generation_config={"response_mime_type": "text/plain"},
-                system_instruction=context_prompt
+                generation_config={"response_mime_type": "text/plain"}
             )
             return response_gemini.text.strip()
         except Exception as e:
