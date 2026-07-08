@@ -145,14 +145,159 @@ def speak(text):
 # ==================================================
 # 24/7 LISTEN (VOSK WAKE WORD + GROQ WHISPER)
 # ==================================================
-def listen():
+def transcribe_offline_vosk(wav_path: str) -> str:
+    """Transcribes a WAV file locally using the Vosk model (no API keys required)."""
+    try:
+        import wave
+        wf = wave.open(wav_path, "rb")
+        
+        # Ensure correct audio format
+        if wf.getnchannels() != 1 or wf.getsampwidth() != 2 or wf.getcomptype() != "NONE":
+            pass
+            
+        from vosk import KaldiRecognizer
+        rec = KaldiRecognizer(vosk_model, wf.getframerate())
+        
+        result_text = ""
+        while True:
+            data = wf.readframes(4000)
+            if len(data) == 0:
+                break
+            if rec.AcceptWaveform(data):
+                res = json.loads(rec.Result())
+                result_text += " " + res.get("text", "")
+                
+        res = json.loads(rec.FinalResult())
+        result_text += " " + res.get("text", "")
+        wf.close()
+        return result_text.strip()
+    except Exception as e:
+        print(f"[Auditory System] Offline Vosk transcription failed: {e}")
+        return ""
+
+def transcribe_audio(audio) -> str:
+    """Transcribes recorded audio using Groq Whisper, falling back to Google Gemini, and finally offline Vosk."""
+    print("[Transcribing via Groq Whisper...]")
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+        f.write(audio.get_wav_data())
+        temp_audio_path = f.name
+        
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY.strip()}"
+    }
+    
+    response = None
+    try:
+        with open(temp_audio_path, "rb") as audio_file:
+            files = {
+                "file": ("audio.wav", audio_file, "audio/wav"),
+                "model": (None, "whisper-large-v3-turbo")
+            }
+            response = requests.post("https://api.groq.com/openai/v1/audio/transcriptions", headers=headers, files=files, timeout=10)
+    except Exception as e:
+        print(f"[Auditory System] Groq request connection error: {e}")
+        
+    use_gemini_fallback = (response is None or response.status_code != 200)
+    
+    if not use_gemini_fallback:
+        if os.path.exists(temp_audio_path):
+            os.remove(temp_audio_path)
+        result = response.json()
+        command = result.get("text", "").strip()
+        print(f"You: {command}")
+        if command:
+            send_hud_state("thinking", command)
+        return command
+    else:
+        status_code = response.status_code if response else "NO_RESPONSE"
+        error_text = response.text if response else "Timeout/Connection Failed"
+        print(f"[Auditory System] Groq Whisper failed (Status {status_code}: {error_text}). Switching to Google Gemini Fallback...")
+        
+        google_key = os.environ.get("GOOGLE_AI_KEY", "").strip()
+        use_offline_vosk = False
+        
+        if google_key:
+            try:
+                import google.generativeai as genai
+                genai.configure(api_key=google_key)
+                
+                print("[Auditory System] Uploading audio to Google...")
+                audio_file_upload = genai.upload_file(path=temp_audio_path)
+                
+                print("[Auditory System] Transcribing via Google Gemini Flash...")
+                model = genai.GenerativeModel("gemini-1.5-flash")
+                response_gemini = model.generate_content([
+                    "Please transcribe the following audio recording exactly as spoken. Do not add any commentary, notes, or explanations.",
+                    audio_file_upload
+                ])
+                command = response_gemini.text.strip()
+                
+                try:
+                    audio_file_upload.delete()
+                except Exception:
+                    pass
+                if os.path.exists(temp_audio_path):
+                    os.remove(temp_audio_path)
+                
+                print(f"You (Gemini): {command}")
+                if command:
+                    send_hud_state("thinking", command)
+                return command
+            except Exception as e:
+                print(f"[Auditory System] Google Gemini fallback failed: {e}")
+                use_offline_vosk = True
+        else:
+            print("[Auditory System] GOOGLE_AI_KEY not set. Switching to Offline Vosk fallback...")
+            use_offline_vosk = True
+            
+        if use_offline_vosk:
+            print("[Auditory System] Transcribing offline using local Vosk model...")
+            try:
+                command = transcribe_offline_vosk(temp_audio_path)
+                if os.path.exists(temp_audio_path):
+                    os.remove(temp_audio_path)
+                print(f"You (Offline Vosk): {command}")
+                if command:
+                    send_hud_state("thinking", command)
+                return command
+            except Exception as e:
+                print(f"[Auditory System] Offline transcription failed: {e}")
+                if os.path.exists(temp_audio_path):
+                    os.remove(temp_audio_path)
+                send_hud_state("standby", "")
+                return ""
+
+def listen_direct() -> str:
+    """Listens and transcribes audio directly without waiting for a wake word."""
+    # 2. Record High-Fidelity Audio
+    recognizer_sr = sr.Recognizer()
+    try:
+        profile = get_memory_instance().user_profile
+        threshold = profile.get("preferences", {}).get("mic_energy_threshold")
+        if threshold is not None:
+            recognizer_sr.energy_threshold = int(threshold)
+            print(f"[SYSTEM] Loaded trained mic sensitivity threshold: {threshold}")
+    except Exception:
+        pass
+    recognizer_sr.dynamic_energy_threshold = True
+    
+    with sr.Microphone() as source:
+        try:
+            audio = recognizer_sr.listen(source, timeout=5, phrase_time_limit=10)
+        except sr.WaitTimeoutError:
+            return ""
+            
+    return transcribe_audio(audio)
+
+def listen() -> str:
     global stop_speaking
     print("\n" + "="*50)
-    print(" >>> 🟢 ULTRON STANDBY: SAY 'ULTRON' TO WAKE ME UP... 🟢 <<<")
+    print(" >>> 🟢 VISION STANDBY: SAY 'VISION' (OR 'ULTRON') TO WAKE ME UP... 🟢 <<<")
     print("="*50 + "\n")
-    # Optimization: constrain vocabulary to only target keywords to boost sensitivity and accuracy.
-    # Include phonetic variants of 'Ultron' (e.g. ultra, ulton, alton, eltron) in case of accents or local pronunciations.
-    recognizer = vosk.KaldiRecognizer(vosk_model, 16000, '["ultron", "ultra", "ulton", "alton", "eltron", "all turn", "old run", "stop", "[unk]"]')
+    
+    # Vocabulary constraint including phonetic variants of 'Vision' and 'Ultron'
+    vocab = '["vision", "pigeon", "fission", "visual", "reason", "version", "region", "decision", "mission", "division", "ultron", "ultra", "ulton", "alton", "eltron", "all turn", "old run", "oldrun", "old train", "outrun", "alter", "stop", "[unk]"]'
+    recognizer = vosk.KaldiRecognizer(vosk_model, 16000, vocab)
     
     wake_word_detected = False
     
@@ -178,8 +323,12 @@ def listen():
                             stop_speaking = True
                             return ""
                     
-                    # Check for Wake Word (phonetically robust matching)
-                    if any(w in text for w in ["ultron", "ultra", "ulton", "alton", "eltron", "all turn", "old run"]):
+                    # Phonetically robust wake-word triggers for 'Vision' and 'Ultron'
+                    wake_words = [
+                        "vision", "pigeon", "fission", "visual", "reason", "version", "region", "decision", "mission", "division",
+                        "ultron", "ultra", "ulton", "alton", "eltron", "all turn", "old run", "oldrun", "old train", "outrun", "alter"
+                    ]
+                    if any(w in text for w in wake_words):
                         wake_word_detected = True
                         break
             else:
@@ -213,84 +362,7 @@ def listen():
             except sr.WaitTimeoutError:
                 return ""
         
-        # 3. Transcribe via Groq Whisper API (Lightning Fast, Perfect Accuracy)
-        print("[Transcribing via Groq Whisper...]")
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-            f.write(audio.get_wav_data())
-            temp_audio_path = f.name
-            
-        headers = {
-            "Authorization": f"Bearer {GROQ_API_KEY.strip()}"
-        }
-        
-        response = None
-        try:
-            with open(temp_audio_path, "rb") as audio_file:
-                files = {
-                    "file": ("audio.wav", audio_file, "audio/wav"),
-                    "model": (None, "whisper-large-v3-turbo")
-                }
-                response = requests.post("https://api.groq.com/openai/v1/audio/transcriptions", headers=headers, files=files, timeout=10)
-        except Exception as e:
-            print(f"[Auditory System] Groq request connection error: {e}")
-            
-        use_gemini_fallback = (response is None or response.status_code != 200)
-        
-        if not use_gemini_fallback:
-            if os.path.exists(temp_audio_path):
-                os.remove(temp_audio_path)
-            result = response.json()
-            command = result.get("text", "").strip()
-            print(f"You: {command}")
-            if command:
-                send_hud_state("thinking", command)
-            return command
-        else:
-            status_code = response.status_code if response else "NO_RESPONSE"
-            error_text = response.text if response else "Timeout/Connection Failed"
-            print(f"[Auditory System] Groq Whisper failed (Status {status_code}: {error_text}). Switching to Google Gemini Fallback...")
-            
-            google_key = os.environ.get("GOOGLE_AI_KEY", "").strip()
-            if not google_key:
-                print("[Auditory System] Google Gemini fallback key (GOOGLE_AI_KEY) is missing. Unable to transcribe.")
-                if os.path.exists(temp_audio_path):
-                    os.remove(temp_audio_path)
-                send_hud_state("standby", "")
-                return ""
-            
-            try:
-                import google.generativeai as genai
-                genai.configure(api_key=google_key)
-                
-                print("[Auditory System] Uploading audio to Google...")
-                audio_file_upload = genai.upload_file(path=temp_audio_path)
-                
-                print("[Auditory System] Transcribing via Google Gemini Flash...")
-                model = genai.GenerativeModel("gemini-1.5-flash")
-                response_gemini = model.generate_content([
-                    "Please transcribe the following audio recording exactly as spoken. Do not add any commentary, notes, or explanations.",
-                    audio_file_upload
-                ])
-                command = response_gemini.text.strip()
-                
-                # Clean up
-                try:
-                    audio_file_upload.delete()
-                except Exception:
-                    pass
-                if os.path.exists(temp_audio_path):
-                    os.remove(temp_audio_path)
-                
-                print(f"You (Gemini): {command}")
-                if command:
-                    send_hud_state("thinking", command)
-                return command
-            except Exception as e:
-                print(f"[Auditory System] Google Gemini transcription fallback failed: {e}")
-                if os.path.exists(temp_audio_path):
-                    os.remove(temp_audio_path)
-                send_hud_state("standby", "")
-                return ""
+        return transcribe_audio(audio)
 
 # ==================================================
 # SKILL IMPORTS
@@ -1579,12 +1651,15 @@ def main():
     import argparse
     parser = argparse.ArgumentParser(description="Ultron AI Assistant")
     parser.add_argument("--text", action="store_true", help="Run in text-only CLI mode without voice inputs.")
+    parser.add_argument("--no-wake", action="store_true", help="Run in direct listening mode without waiting for a wake word.")
     args = parser.parse_args()
 
     print("=========================================")
     print("          PROJECT ULTRON ONLINE          ")
     if args.text:
         print("             (TEXT MODE)                 ")
+    elif args.no_wake:
+        print("         (DIRECT VOICE TEST MODE)        ")
     print("=========================================")
     
     # 0. Start Holographic HUD
@@ -1615,6 +1690,11 @@ def main():
     while True:
         if args.text:
             query = input("\n[TEXT COMMAND] Enter command (or 'exit'): ")
+        elif args.no_wake:
+            print("\n" + "="*50)
+            print(" >>> 🎙️ LISTENING DIRECTLY (NO WAKE WORD NEEDED)... SPEAK NOW! 🎙️ <<<")
+            print("="*50 + "\n")
+            query = listen_direct()
         else:
             query = listen()
             
