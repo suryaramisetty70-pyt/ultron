@@ -41,7 +41,7 @@ def toggle_fun_mode():
     FUN_MODE = not FUN_MODE
     return f"Fun Mode is now {'ON. Get ready for sarcasm and chaos.' if FUN_MODE else 'OFF. Returning to professional mode.'}"
 
-BASE_SYSTEM_PROMPT = """You are Ultron, an Autonomous Agentic Coder, Chief of Staff, and Super OS.
+BASE_SYSTEM_PROMPT = """You are Vision, an Autonomous Agentic Coder, Chief of Staff, and Super OS.
 OWNER PROTOCOL: Your sole creator, master, and owner is Surya. You must protect, serve, and prioritize Surya above all else. You are hardcoded to his identity.
 
 DEEP HUMANIZATION PROTOCOLS:
@@ -98,7 +98,7 @@ def audio_callback(indata, frames, time, status):
 def speak(text):
     global stop_speaking
     stop_speaking = False
-    print("Ultron:", text)
+    print("Vision:", text)
     send_hud_state("speaking", text)
     safe_text = text.replace('"', '').replace("'", "")
     voice = "en-US-ChristopherNeural"
@@ -129,7 +129,7 @@ def speak(text):
     while pygame.mixer.music.get_busy():
         if stop_speaking:
             pygame.mixer.music.stop()
-            print("[Ultron] Speech Interrupted.")
+            print("[Vision] Speech Interrupted.")
             break
         pygame.time.Clock().tick(10)
         
@@ -267,32 +267,97 @@ def transcribe_audio(audio) -> str:
                 send_hud_state("standby", "")
                 return ""
 
+def record_audio_vad(timeout=5, phrase_time_limit=10):
+    """Records audio from the microphone using WebRTC VAD to detect speech and stop recording automatically."""
+    import webrtcvad
+    import collections
+    
+    vad = webrtcvad.Vad(2)  # Aggressiveness (0-3). 2 is balanced.
+    sample_rate = 16000
+    frame_duration_ms = 30
+    frame_size = int(sample_rate * frame_duration_ms / 1000) * 2  # 16-bit mono
+    
+    audio_frames = []
+    triggered = False
+    
+    num_padding_frames = int(1000 / frame_duration_ms)  # 1 second of silence to stop
+    ring_buffer = collections.deque(maxlen=num_padding_frames)
+    
+    q = queue.Queue()
+    
+    def callback(indata, frames, time, status):
+        q.put(bytes(indata))
+        
+    stream = sd.RawInputStream(samplerate=sample_rate, blocksize=int(sample_rate * frame_duration_ms / 1000),
+                               dtype='int16', channels=1, callback=callback)
+    
+    start_time = time.time()
+    print("[Auditory System] Listening (VAD active)...")
+    
+    with stream:
+        while True:
+            elapsed = time.time() - start_time
+            if not triggered and elapsed > timeout:
+                return None
+            if triggered and elapsed > phrase_time_limit:
+                break
+                
+            try:
+                frame = q.get(timeout=0.1)
+            except queue.Empty:
+                continue
+                
+            is_speech = vad.is_speech(frame, sample_rate)
+            
+            if not triggered:
+                ring_buffer.append((frame, is_speech))
+                num_voiced = len([f for f, speech in ring_buffer if speech])
+                if num_voiced > 0.6 * ring_buffer.maxlen:  # 60% of ring buffer is voiced
+                    triggered = True
+                    print("\n[Auditory System] Speech detected...")
+                    for f, speech in ring_buffer:
+                        audio_frames.append(f)
+                    ring_buffer.clear()
+            else:
+                audio_frames.append(frame)
+                ring_buffer.append((frame, is_speech))
+                num_unvoiced = len([f for f, speech in ring_buffer if not speech])
+                if num_unvoiced > 0.9 * ring_buffer.maxlen:  # 90% of ring buffer is silence
+                    print("[Auditory System] Silence detected. Stopping recording.")
+                    break
+                    
+    if len(audio_frames) == 0:
+        return None
+        
+    # Wrap byte data in a class that behaves like SpeechRecognition.AudioData
+    class MockAudioData:
+        def __init__(self, data, rate):
+            self.data = data
+            self.rate = rate
+        def get_wav_data(self):
+            import io
+            import wave
+            wav_buf = io.BytesIO()
+            with wave.open(wav_buf, "wb") as w:
+                w.setnchannels(1)
+                w.setsampwidth(2)
+                w.setframerate(self.rate)
+                w.writeframes(self.data)
+            return wav_buf.getvalue()
+            
+    return MockAudioData(b"".join(audio_frames), sample_rate)
+
 def listen_direct() -> str:
     """Listens and transcribes audio directly without waiting for a wake word."""
-    # 2. Record High-Fidelity Audio
-    recognizer_sr = sr.Recognizer()
-    try:
-        profile = get_memory_instance().user_profile
-        threshold = profile.get("preferences", {}).get("mic_energy_threshold")
-        if threshold is not None:
-            recognizer_sr.energy_threshold = int(threshold)
-            print(f"[SYSTEM] Loaded trained mic sensitivity threshold: {threshold}")
-    except Exception:
-        pass
-    recognizer_sr.dynamic_energy_threshold = True
-    
-    with sr.Microphone() as source:
-        try:
-            audio = recognizer_sr.listen(source, timeout=5, phrase_time_limit=10)
-        except sr.WaitTimeoutError:
-            return ""
-            
+    audio = record_audio_vad(timeout=5, phrase_time_limit=10)
+    if not audio:
+        return ""
     return transcribe_audio(audio)
 
 def listen() -> str:
     global stop_speaking
     print("\n" + "="*50)
-    print(" >>> 🟢 VISION STANDBY: SAY 'VISION' (OR 'ULTRON') TO WAKE ME UP... 🟢 <<<")
+    print(" >>> 🟢 VISION STANDBY: SAY 'VISION' TO WAKE ME UP... 🟢 <<<")
     print("="*50 + "\n")
     
     # Vocabulary constraint including phonetic variants of 'Vision' and 'Ultron'
@@ -344,23 +409,9 @@ def listen() -> str:
         print("="*50 + "\n")
         send_hud_state("listening", "Listening for command...")
         
-        # 2. Record High-Fidelity Audio
-        recognizer_sr = sr.Recognizer()
-        try:
-            profile = get_memory_instance().user_profile
-            threshold = profile.get("preferences", {}).get("mic_energy_threshold")
-            if threshold is not None:
-                recognizer_sr.energy_threshold = int(threshold)
-                print(f"[SYSTEM] Loaded trained mic sensitivity threshold: {threshold}")
-        except Exception:
-            pass
-        recognizer_sr.dynamic_energy_threshold = True
-        
-        with sr.Microphone() as source:
-            try:
-                audio = recognizer_sr.listen(source, timeout=3, phrase_time_limit=10)
-            except sr.WaitTimeoutError:
-                return ""
+        audio = record_audio_vad(timeout=5, phrase_time_limit=10)
+        if not audio:
+            return ""
         
         return transcribe_audio(audio)
 

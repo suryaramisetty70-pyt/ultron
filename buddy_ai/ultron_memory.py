@@ -3,15 +3,16 @@ from chromadb.config import Settings
 import datetime
 import os
 import json
+import threading
 
 class UltronMemory:
     def __init__(self, db_path="ultron_chroma_db"):
-        print("[Ultron Memory] Initializing Vector Database...")
+        print("[Vision Memory] Initializing Vector Database...")
         # Try to use a persistent client; if it fails (Rust panic) fall back to an in‑memory client.
         try:
             self.client = chromadb.PersistentClient(path=db_path)
         except BaseException as e:
-            print(f"[Ultron Memory] Persistent client failed ({e}); switching to in‑memory client.")
+            print(f"[Vision Memory] Persistent client failed ({e}); switching to in‑memory client.")
             # Use a safe in‑memory client with minimal settings.
             self.client = chromadb.Client(Settings(anonymized_telemetry=False))
         
@@ -26,7 +27,16 @@ class UltronMemory:
         if not os.path.exists(self.profile_path):
             self._save_profile_data({"preferences": {}, "custom_instructions": []})
             
-        print("[Ultron Memory] Vector Database Online.")
+        # Pre-warm embedding function in a background thread to prevent first-query lag
+        def warm_up():
+            try:
+                self.collection.query(query_texts=["warmup"], n_results=1)
+                print("[Vision Memory] Embedding engine fully warmed up and active.")
+            except Exception:
+                pass
+        threading.Thread(target=warm_up, daemon=True).start()
+            
+        print("[Vision Memory] Vector Database Online.")
 
     @property
     def user_profile(self):
@@ -44,7 +54,7 @@ class UltronMemory:
             with open(self.profile_path, "w") as f:
                 json.dump(data, f, indent=4)
         except Exception as e:
-            print(f"[Ultron Memory] Failed to save profile: {e}")
+            print(f"[Vision Memory] Failed to save profile: {e}")
             
     def update_user_preference(self, key, value):
         """Updates a specific preference in the episodic memory."""
@@ -84,7 +94,7 @@ class UltronMemory:
                 
             past_contexts = []
             for doc, meta in zip(results["documents"][0], results["metadatas"][0]):
-                past_contexts.append(f"User said: {doc} | Ultron replied: {meta['response']}")
+                past_contexts.append(f"User said: {doc} | Vision replied: {meta['response']}")
                 
             return "\n".join(past_contexts)
         except Exception as e:
