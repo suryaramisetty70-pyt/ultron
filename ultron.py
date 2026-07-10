@@ -1537,26 +1537,69 @@ Be concise and speak naturally like a real AI assistant."""
     if use_gemini_brain:
         print("[Agent Brain] Groq Chat API failed. Switching to Google Gemini Brain Fallback...")
         google_key = os.environ.get("GOOGLE_AI_KEY", "").strip()
-        if not google_key:
-            return "AI brain offline. Both Groq and Gemini API keys are invalid or missing."
         
-        try:
-            import google.generativeai as genai
-            genai.configure(api_key=google_key)
-            model = genai.GenerativeModel(model_name="gemini-pro")
+        gemini_failed = False
+        if google_key:
+            try:
+                import google.generativeai as genai
+                genai.configure(api_key=google_key)
+                model = genai.GenerativeModel(model_name="gemini-pro")
+                
+                # Format message history with prepended system instruction for legacy support
+                prompt_parts = [f"System Instructions (Follow these rules strictly):\n{context_prompt}\n\n"]
+                for msg in messages:
+                    if msg["role"] == "user":
+                        prompt_parts.append(f"User: {msg['content']}")
+                    elif msg["role"] == "assistant" and msg.get("content"):
+                        prompt_parts.append(f"Vision: {msg['content']}")
+                
+                response_gemini = model.generate_content(prompt_parts)
+                return response_gemini.text.strip()
+            except Exception as e:
+                print(f"[Agent Brain] Gemini fallback failed: {e}")
+                gemini_failed = True
+        else:
+            gemini_failed = True
             
-            # Format message history with prepended system instruction for legacy support
-            prompt_parts = [f"System Instructions (Follow these rules strictly):\n{context_prompt}\n\n"]
-            for msg in messages:
-                if msg["role"] == "user":
-                    prompt_parts.append(f"User: {msg['content']}")
-                elif msg["role"] == "assistant" and msg.get("content"):
-                    prompt_parts.append(f"Vision: {msg['content']}")
+        if gemini_failed:
+            print("[Agent Brain] Both online APIs failed. Switching to local Offline Rule-Based Brain...")
+            # Local Offline command parser so the assistant never crashes and can still show off local features!
+            query_lower = question.lower()
             
-            response_gemini = model.generate_content(prompt_parts)
-            return response_gemini.text.strip()
-        except Exception as e:
-            return f"Failed to route request through Gemini brain: {e}"
+            if "open" in query_lower:
+                app_name = query_lower.replace("open", "").replace("vision", "").strip()
+                if app_name:
+                    from buddy_ai.skills.app_control import open_application
+                    open_application(app_name)
+                    return f"Offline Mode: Opening {app_name}."
+            
+            if "close" in query_lower:
+                app_name = query_lower.replace("close", "").replace("vision", "").strip()
+                if app_name:
+                    from buddy_ai.skills.app_control import close_application
+                    close_application(app_name)
+                    return f"Offline Mode: Closing {app_name}."
+                    
+            if "time" in query_lower or "date" in query_lower:
+                from datetime import datetime
+                return f"Offline Mode: The current local time is {datetime.now().strftime('%I:%M %p')}."
+                
+            if "lock" in query_lower and "computer" in query_lower:
+                import ctypes
+                ctypes.windll.user32.LockWorkStation()
+                return "Offline Mode: Locking computer workstation."
+                
+            if "volume" in query_lower:
+                if "up" in query_lower:
+                    from buddy_ai.skills.app_control import volume_up
+                    volume_up()
+                    return "Offline Mode: Volume increased."
+                elif "down" in query_lower:
+                    from buddy_ai.skills.app_control import volume_down
+                    volume_down()
+                    return "Offline Mode: Volume decreased."
+                    
+            return "Offline Mode: Both Groq and Gemini API keys are invalid. Please update your .env file with valid keys. I can still perform local actions like 'open chrome', 'what time is it', or 'lock computer'."
 
     response_data = response.json()["choices"][0]["message"]
     
