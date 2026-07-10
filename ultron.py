@@ -1543,23 +1543,17 @@ Be concise and speak naturally like a real AI assistant."""
         try:
             import google.generativeai as genai
             genai.configure(api_key=google_key)
-            model = genai.GenerativeModel(
-                model_name="gemini-1.5-flash",
-                system_instruction=context_prompt
-            )
+            model = genai.GenerativeModel(model_name="gemini-pro")
             
-            # Format message history for Gemini text generation prompt
-            prompt_parts = []
+            # Format message history with prepended system instruction for legacy support
+            prompt_parts = [f"System Instructions (Follow these rules strictly):\n{context_prompt}\n\n"]
             for msg in messages:
                 if msg["role"] == "user":
                     prompt_parts.append(f"User: {msg['content']}")
                 elif msg["role"] == "assistant" and msg.get("content"):
                     prompt_parts.append(f"Vision: {msg['content']}")
             
-            response_gemini = model.generate_content(
-                prompt_parts,
-                generation_config={"response_mime_type": "text/plain"}
-            )
+            response_gemini = model.generate_content(prompt_parts)
             return response_gemini.text.strip()
         except Exception as e:
             return f"Failed to route request through Gemini brain: {e}"
