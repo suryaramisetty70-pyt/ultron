@@ -35,8 +35,24 @@ def _run_rewind_loop():
     
     screenshot_path = "temp_rewind_capture.png"
     
+    blocklist = ["banking", "password", "key", "credential", "auth", "secret", "private"]
+    import ctypes
+    from buddy_ai.core_extensions import apply_privacy_noise
+    
     while True:
         try:
+            # Check active window title for screen consent validation
+            hwnd = ctypes.windll.user32.GetForegroundWindow()
+            length = ctypes.windll.user32.GetWindowTextLengthW(hwnd)
+            buff = ctypes.create_unicode_buffer(length + 1)
+            ctypes.windll.user32.GetWindowTextW(hwnd, buff, length + 1)
+            window_title = buff.value.lower()
+            
+            if any(term in window_title for term in blocklist):
+                print(f"[Rewind Engine] Consent Block: Suppressing capture for sensitive window: {buff.value}")
+                time.sleep(60)
+                continue
+                
             # 1. Silent Screenshot
             screen = ImageGrab.grab()
             screen.save(screenshot_path)
@@ -44,6 +60,9 @@ def _run_rewind_loop():
             # 2. Extract Text
             result = reader.readtext(screenshot_path, detail=0)
             text_content = " ".join(result)
+            
+            # Privacy redactions and Differential Privacy noise filtering
+            text_content = apply_privacy_noise(text_content)
             
             # 3. Push to Vector DB
             if text_content.strip() and len(text_content) > 20: # Ignore blank screens

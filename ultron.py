@@ -103,10 +103,21 @@ def speak(text):
     safe_text = text.replace('"', '').replace("'", "")
     voice = "en-US-ChristopherNeural"
     
-    # Emotional Frequency Control (Human Prosody)
+    # Emotional Frequency Control (Human Prosody Analyzer)
     pitch = "+0Hz"
     rate = "+0%"
     
+    # Simple rule-based prosody sentiment analyzer
+    lower_text = safe_text.lower()
+    if any(word in lower_text for word in ["sorry", "sad", "bad", "error", "failed", "offline"]):
+        # Serious / low energy -> slower, deeper tone
+        pitch = "-4Hz"
+        rate = "-8%"
+    elif any(word in lower_text for word in ["success", "active", "online", "good", "great", "yes", "completed"]):
+        # Happy / helpful -> slightly higher pitch, faster pace
+        pitch = "+4Hz"
+        rate = "+6%"
+        
     if "?" in safe_text:
         pitch = "+5Hz"
     elif "!" in safe_text:
@@ -1520,19 +1531,29 @@ Be concise and speak naturally like a real AI assistant."""
         "tool_choice": "auto"
     }
 
-    # 1. First Pass (Planning & Tool Calling)
-    response = None
-    try:
-        response = requests.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers=headers,
-            json=payload,
-            timeout=20
-        )
-    except Exception as e:
-        print(f"[Agent Brain] Groq Chat connection error: {e}")
-        
-    use_gemini_brain = (response is None or response.status_code != 200)
+    from buddy_ai.core_extensions import check_budget_limit, track_cost
+    
+    # Check Daily Budget Limit
+    if check_budget_limit():
+        print("[Budget Governor] Daily limit exceeded. Forcing Offline Brain fallback...")
+        use_gemini_brain = True
+        response = None
+    else:
+        # 1. First Pass (Planning & Tool Calling)
+        response = None
+        try:
+            response = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=20
+            )
+            if response is not None and response.status_code == 200:
+                track_cost("groq")
+        except Exception as e:
+            print(f"[Agent Brain] Groq Chat connection error: {e}")
+            
+        use_gemini_brain = (response is None or response.status_code != 200)
 
     if use_gemini_brain:
         print("[Agent Brain] Groq Chat API failed. Switching to Google Gemini Brain Fallback...")
@@ -1554,7 +1575,16 @@ Be concise and speak naturally like a real AI assistant."""
                         prompt_parts.append(f"Vision: {msg['content']}")
                 
                 response_gemini = model.generate_content(prompt_parts)
-                return response_gemini.text.strip()
+                # Legacy support tracking
+                track_cost("gemini")
+                
+                # Check for Self-Improving Skill Loop activation
+                # If code is generated or script is built successfully, auto-save as skill
+                response_text = response_gemini.text.strip()
+                if "def " in response_text or "import " in response_text:
+                    from buddy_ai.core_extensions import save_successful_skill
+                    save_successful_skill(question[:30], response_text, True)
+                return response_text
             except Exception as e:
                 print(f"[Agent Brain] Gemini fallback failed: {e}")
                 gemini_failed = True
@@ -1607,16 +1637,22 @@ Be concise and speak naturally like a real AI assistant."""
     if response_data.get("tool_calls"):
         messages.append(response_data)
         
+        from buddy_ai.core_extensions import check_tool_approval
+        
         for tool_call in response_data["tool_calls"]:
             tool_name = tool_call["function"]["name"]
             arguments = json.loads(tool_call["function"]["arguments"])
             print(f"[Agent Router] Executing: {tool_name}({arguments})")
             
-            # Universal Tool Router
-            if tool_name in TOOL_EXECUTOR:
-                result = TOOL_EXECUTOR[tool_name](arguments)
+            # Tool Guard Check
+            if not check_tool_approval(tool_name, arguments):
+                result = f"Tool {tool_name} execution denied by Tool Guard."
             else:
-                result = f"Unknown tool: {tool_name}"
+                # Universal Tool Router
+                if tool_name in TOOL_EXECUTOR:
+                    result = TOOL_EXECUTOR[tool_name](arguments)
+                else:
+                    result = f"Unknown tool: {tool_name}"
                 
             messages.append({
                 "role": "tool",
@@ -1637,7 +1673,12 @@ Be concise and speak naturally like a real AI assistant."""
             timeout=20
         )
         if final_response.status_code == 200:
-            return final_response.json()["choices"][0]["message"]["content"]
+            track_cost("groq")
+            response_text = final_response.json()["choices"][0]["message"]["content"]
+            if "def " in response_text or "import " in response_text:
+                from buddy_ai.core_extensions import save_successful_skill
+                save_successful_skill(question[:30], response_text, True)
+            return response_text
             
     return response_data.get("content", "I am unable to process that.")
 
@@ -1807,8 +1848,18 @@ def main():
         # Get AI response (Agentic Brain handles everything autonomously)
         answer = ask_ai(query, past_context)
         
-        # Log to Vector Database for future recall
-        memory.log_interaction(query, answer)
+        # Log to Vector Database for future recall with differential privacy noise filters
+        from buddy_ai.core_extensions import apply_privacy_noise, run_skill_pruning
+        
+        # Trigger weekly skill pruning silently at loop start
+        try:
+            run_skill_pruning()
+        except Exception:
+            pass
+            
+        clean_query = apply_privacy_noise(query)
+        clean_answer = apply_privacy_noise(answer)
+        memory.log_interaction(clean_query, clean_answer)
 
         # Speak answer
         speak(answer)

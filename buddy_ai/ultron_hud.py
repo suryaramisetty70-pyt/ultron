@@ -61,6 +61,30 @@ class UltronHUD(QWidget):
         self.layout.addWidget(self.subtitle_label)
         self.setLayout(self.layout)
 
+        # Timer for adaptive transparency (Fullscreen detection)
+        self.transparency_timer = QTimer()
+        self.transparency_timer.timeout.connect(self.check_fullscreen_activity)
+        self.transparency_timer.start(1000)
+
+    def check_fullscreen_activity(self):
+        """Checks if foreground window is fullscreen. If so, lowers opacity."""
+        try:
+            import ctypes
+            hwnd = ctypes.windll.user32.GetForegroundWindow()
+            rect = ctypes.wintypes.RECT()
+            ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
+            width = rect.right - rect.left
+            height = rect.bottom - rect.top
+            
+            screen = QApplication.primaryScreen().geometry()
+            # If active window covers the screen, lower HUD opacity
+            if width >= screen.width() and height >= screen.height():
+                self.setWindowOpacity(0.15)
+            else:
+                self.setWindowOpacity(0.95)
+        except Exception:
+            pass
+
     def update_state(self, message):
         state = message.get("state", "standby")
         text = message.get("text", "")
@@ -75,7 +99,7 @@ class UltronHUD(QWidget):
             self.status_label.setText("🔊 SPEAKING")
             self.status_label.setStyleSheet("color: #ff0055; background-color: rgba(50, 0, 0, 150); border-radius: 10px; padding: 10px;")
         else:
-            self.status_label.setText("ULTRON STANDBY")
+            self.status_label.setText("VISION STANDBY")
             self.status_label.setStyleSheet("color: #00ffff; background-color: rgba(0, 20, 50, 100); border-radius: 10px; padding: 10px;")
             
         self.subtitle_label.setText(text)
