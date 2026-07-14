@@ -1729,6 +1729,13 @@ def proactive_loop():
 # MAIN LOOP
 # ==================================================
 def main():
+    from dotenv import load_dotenv
+    load_dotenv()
+    
+    # Reload configs dynamically after loading env
+    global GROQ_API_KEY
+    GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+    
     from buddy_ai.skills.phone_bridge import start_omnichannel_array
     
     # 3. BACKGROUND BRIDGES & MEMORY
