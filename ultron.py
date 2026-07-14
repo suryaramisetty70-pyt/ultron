@@ -456,8 +456,15 @@ from buddy_ai.skills.super_os import delete_path, copy_path, move_path, list_dir
 from buddy_ai.skills.email_agent import send_email, check_inbox, draft_email
 from buddy_ai.skills.auto_coder import test_python_file, scan_python_project
 from buddy_ai.skills.web_engine import open_website, install_software
-from buddy_ai.skills.quantum_engine import generate_quantum_randomness
-from buddy_ai.skills.smart_music import play_music_by_mood
+# Lazy-load skills to prevent multiprocessing circular import crashes
+def generate_quantum_randomness():
+    from buddy_ai.skills.quantum_engine import generate_quantum_randomness as execute_quantum
+    return execute_quantum()
+
+def play_music_by_mood(mood):
+    from buddy_ai.skills.smart_music import play_music_by_mood as execute_music
+    return execute_music(mood)
+
 from buddy_ai.skills.security_engine import activate_intruder_lock
 from buddy_ai.skills.biometric_engine import calculate_heart_rate
 from buddy_ai.skills.quantum_cryptography import quantum_lock, quantum_unlock, initiate_protocol_zero
