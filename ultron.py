@@ -1817,9 +1817,9 @@ def main():
     memory = get_memory_instance()
     
     # 2. Start Vision Process on Dedicated CPU Core (Hand Gestures)
-    # DISABLING VISION FOR NOW TO STABILIZE VOICE
-    # vision = UltronVision()
-    # vision.start()
+    from buddy_ai.ultron_vision import UltronVision
+    vision = UltronVision()
+    vision.start()
     
     # 3. Start Mobile Server
     mobile = UltronMobileUplink()
