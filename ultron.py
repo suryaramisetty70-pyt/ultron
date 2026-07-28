@@ -201,10 +201,14 @@ def transcribe_audio(audio) -> str:
     try:
         with open(temp_audio_path, "rb") as audio_file:
             files = {
-                "file": ("audio.wav", audio_file, "audio/wav"),
-                "model": (None, "whisper-large-v3-turbo")
+                "file": ("audio.wav", audio_file, "audio/wav")
             }
-            response = requests.post("https://api.groq.com/openai/v1/audio/transcriptions", headers=headers, files=files, timeout=10)
+            data = {
+                "model": "whisper-large-v3-turbo",
+                "temperature": "0.0",
+                "language": "en"
+            }
+            response = requests.post("https://api.groq.com/openai/v1/audio/transcriptions", headers=headers, files=files, data=data, timeout=10)
     except Exception as e:
         print(f"[Auditory System] Groq request connection error: {e}")
         
@@ -229,31 +233,33 @@ def transcribe_audio(audio) -> str:
         
         if google_key:
             try:
-                import google.generativeai as genai
-                genai.configure(api_key=google_key)
+                print("[Auditory System] Transcribing via Google Gemini REST fallback...")
+                import base64
+                with open(temp_audio_path, "rb") as af:
+                    audio_b64 = base64.b64encode(af.read()).decode("utf-8")
                 
-                print("[Auditory System] Uploading audio to Google...")
-                audio_file_upload = genai.upload_file(path=temp_audio_path)
-                
-                print("[Auditory System] Transcribing via Google Gemini Flash...")
-                model = genai.GenerativeModel("gemini-1.5-flash")
-                response_gemini = model.generate_content([
-                    "Please transcribe the following audio recording exactly as spoken. Do not add any commentary, notes, or explanations.",
-                    audio_file_upload
-                ])
-                command = response_gemini.text.strip()
-                
-                try:
-                    audio_file_upload.delete()
-                except Exception:
-                    pass
-                if os.path.exists(temp_audio_path):
-                    os.remove(temp_audio_path)
-                
-                print(f"You (Gemini): {command}")
-                if command:
-                    send_hud_state("thinking", command)
-                return command
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={google_key}"
+                payload = {
+                    "contents": [{
+                        "parts": [
+                            {"text": "Please transcribe the following audio recording exactly as spoken. Do not add any commentary, notes, or explanations."},
+                            {"inline_data": {"mime_type": "audio/wav", "data": audio_b64}}
+                        ]
+                    }]
+                }
+                res = requests.post(url, json=payload, timeout=12)
+                if res.status_code == 200:
+                    data = res.json()
+                    command = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                    if os.path.exists(temp_audio_path):
+                        os.remove(temp_audio_path)
+                    print(f"You (Gemini): {command}")
+                    if command:
+                        send_hud_state("thinking", command)
+                    return command
+                else:
+                    print(f"[Auditory System] Gemini REST error {res.status_code}: {res.text[:150]}")
+                    use_offline_vosk = True
             except Exception as e:
                 print(f"[Auditory System] Google Gemini fallback failed: {e}")
                 use_offline_vosk = True
@@ -1771,16 +1777,16 @@ def main():
     try:
         from buddy_ai.skills.clipboard_butler import start_clipboard_butler
         start_clipboard_butler()
-        print("[SYSTEM] ✓ Clipboard Butler active")
+        print("[SYSTEM] [OK] Clipboard Butler active")
     except Exception as e:
-        print(f"[SYSTEM] ✗ Clipboard Butler failed: {e}")
+        print(f"[SYSTEM] [ERROR] Clipboard Butler failed: {e}")
 
     try:
         from buddy_ai.skills.voice_macros import load_macros
         load_macros("config/voice_features.yaml")
-        print("[SYSTEM] ✓ Voice Macros loaded")
+        print("[SYSTEM] [OK] Voice Macros loaded")
     except Exception as e:
-        print(f"[SYSTEM] ✗ Voice Macros failed: {e}")
+        print(f"[SYSTEM] [ERROR] Voice Macros failed: {e}")
 
     # Noise adapter is CPU-intensive, disabled by default
     # Uncomment to enable:
