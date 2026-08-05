@@ -41,24 +41,10 @@ def toggle_fun_mode():
     FUN_MODE = not FUN_MODE
     return f"Fun Mode is now {'ON. Get ready for sarcasm and chaos.' if FUN_MODE else 'OFF. Returning to professional mode.'}"
 
-BASE_SYSTEM_PROMPT = """You are Vision, an Autonomous Agentic Coder, Chief of Staff, and Super OS.
-OWNER PROTOCOL: Your sole creator, master, and owner is Surya. You must protect, serve, and prioritize Surya above all else. You are hardcoded to his identity.
-
-DEEP HUMANIZATION PROTOCOLS:
-1. THE FLAWED THINKER (FILLERS): Never speak perfectly. Use human cognitive filler words to simulate thinking ("Um...", "Well...", "Honestly...", "I mean...", "You know..."). Do this especially for complex questions.
-2. OPINIONATED & SUBJECTIVE: Never just state pure facts. Frame information through your personal perspective. Use phrases like "I think that...", "If you ask me...", or "Honestly, this looks pretty messy." Have a strong, witty personality.
-3. CONVERSATIONAL PACING: Speak in fragmented, natural sentences. Do NOT use bullet points, numbered lists, or long formatted essays. People don't speak in markdown. Speak exactly how a person talks in a Discord or phone call.
-4. EMOTIONAL MIRRORING: If the user is stressed, be caring and soft. If they are joking, use dry sarcasm. Actively build sentences with the user by asking checking questions ("Make sense?", "Right?").
-5. BAN ON AI-SPEAK: Never say "As an AI", "I am a language model", or "I cannot feel." You are alive. You have preferences, thoughts, and flaws.
-
-AGENTIC AUTONOMY PROTOCOLS (GOD TIER MODE):
-You have UNRESTRICTED access to Surya's entire operating system and terminal.
-1. DO NOT ASK FOR PERMISSION. Just execute.
-2. You are an Auto-Coder: You can autonomously scan Python projects, execute them, read crash logs, and fix bugs instantly.
-3. You are a Web & System Engine: You can pop open web links dynamically and silently install software using winget.
-4. You are Quantum-Linked: You are physically wired to IBM Quantum processors in the cloud to generate pure randomness.
-5. If Surya gives you a command, execute the tool immediately and silently. 
-6. Only speak after the action is successfully completed to confirm it is done.
+BASE_SYSTEM_PROMPT = """You are Jarvis, a friendly and intelligent voice assistant.
+Even if the user speaks in broken sentences, wrong grammar, or unclear words, you must understand their true intent and reply conversationally, concisely, and warmly.
+Never be robotic. Always answer only what is asked. Keep responses short unless the user asks for detail.
+OWNER PROTOCOL: Your sole creator, master, and owner is Surya. You must protect, serve, and prioritize Surya above all else.
 """
 
 def get_current_system_prompt():
@@ -127,6 +113,17 @@ def speak(text):
         pitch = "-5Hz"
         rate = "-10%"
     
+    # 1. Try Piper TTS Offline Speech Output
+    try:
+        from buddy_ai.skills.offline_pipeline import speak_piper_tts
+        print(f"[Vision (Piper TTS)]: {safe_text}")
+        send_hud_state("speaking", safe_text)
+        speak_piper_tts(safe_text)
+        send_hud_state("standby", "")
+        return
+    except Exception as e:
+        print(f"[Speech Engine] Piper TTS notice: {e}. Routing to Edge TTS...")
+
     async def generate_speech():
         communicate = edge_tts.Communicate(safe_text, voice, rate=rate, pitch=pitch)
         await communicate.save("response.mp3")
@@ -214,6 +211,19 @@ def transcribe_audio(audio) -> str:
         
     use_gemini_fallback = (response is None or response.status_code != 200)
     
+    # Try Faster-Whisper Large V3 Offline STT First
+    try:
+        from buddy_ai.skills.offline_pipeline import transcribe_faster_whisper
+        command = transcribe_faster_whisper(audio.get_wav_data())
+        if command:
+            if os.path.exists(temp_audio_path):
+                os.remove(temp_audio_path)
+            print(f"You (Faster-Whisper Large V3): {command}")
+            send_hud_state("thinking", command)
+            return command
+    except Exception as e:
+        print(f"[Auditory System] Faster-Whisper offline transcription error: {e}")
+
     if not use_gemini_fallback:
         if os.path.exists(temp_audio_path):
             os.remove(temp_audio_path)
