@@ -210,29 +210,29 @@ def transcribe_audio(audio) -> str:
         print(f"[Auditory System] Groq request connection error: {e}")
         
     use_gemini_fallback = (response is None or response.status_code != 200)
-    
-    # Try Faster-Whisper Large V3 Offline STT First
-    try:
-        from buddy_ai.skills.offline_pipeline import transcribe_faster_whisper
-        command = transcribe_faster_whisper(audio.get_wav_data())
-        if command:
-            if os.path.exists(temp_audio_path):
-                os.remove(temp_audio_path)
-            print(f"You (Faster-Whisper Large V3): {command}")
-            send_hud_state("thinking", command)
-            return command
-    except Exception as e:
-        print(f"[Auditory System] Faster-Whisper offline transcription error: {e}")
 
     if not use_gemini_fallback:
         if os.path.exists(temp_audio_path):
             os.remove(temp_audio_path)
         result = response.json()
         command = result.get("text", "").strip()
-        print(f"You: {command}")
+        print(f"You (Groq Whisper): {command}")
         if command:
             send_hud_state("thinking", command)
         return command
+
+    # Fallback to Faster-Whisper Offline STT if online request fails
+    try:
+        from buddy_ai.skills.offline_pipeline import transcribe_faster_whisper
+        command = transcribe_faster_whisper(audio.get_wav_data())
+        if command:
+            if os.path.exists(temp_audio_path):
+                os.remove(temp_audio_path)
+            print(f"You (Faster-Whisper): {command}")
+            send_hud_state("thinking", command)
+            return command
+    except Exception as e:
+        print(f"[Auditory System] Faster-Whisper offline transcription error: {e}")
     else:
         status_code = response.status_code if response else "NO_RESPONSE"
         error_text = response.text if response else "Timeout/Connection Failed"
