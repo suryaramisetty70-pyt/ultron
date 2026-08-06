@@ -1577,17 +1577,24 @@ Be concise and speak naturally like a real AI assistant."""
             print(f"[Agent Brain] Groq Chat connection error: {e}")
             
         use_gemini_brain = (response is None or response.status_code != 200)
+        if use_gemini_brain and response is not None:
+            if response.status_code == 401:
+                print(f"[Agent Brain Error] Groq API returned 401 Unauthorized: Invalid GROQ_API_KEY. Details: {response.text[:200]}")
+            elif response.status_code == 429:
+                print(f"[Agent Brain Error] Groq API returned 429 Quota Exceeded/Rate Limited. Details: {response.text[:200]}")
+            else:
+                print(f"[Agent Brain Error] Groq API call failed (HTTP {response.status_code}): {response.text[:200]}")
 
     if use_gemini_brain:
-        print("[Agent Brain] Groq Chat API failed. Switching to Google Gemini Brain Fallback...")
-        google_key = os.environ.get("GOOGLE_AI_KEY", "").strip()
+        print("[Agent Brain] Groq Chat API unavailable. Switching to Google Gemini Brain Fallback...")
+        google_key = (os.environ.get("GOOGLE_AI_KEY", "") or os.environ.get("GEMINI_API_KEY", "")).strip()
         
         gemini_failed = False
         if google_key:
             try:
                 import google.generativeai as genai
                 genai.configure(api_key=google_key)
-                model = genai.GenerativeModel(model_name="gemini-pro")
+                model = genai.GenerativeModel(model_name="gemini-2.0-flash")
                 
                 # Format message history with prepended system instruction for legacy support
                 prompt_parts = [f"System Instructions (Follow these rules strictly):\n{context_prompt}\n\n"]
@@ -1598,20 +1605,26 @@ Be concise and speak naturally like a real AI assistant."""
                         prompt_parts.append(f"Vision: {msg['content']}")
                 
                 response_gemini = model.generate_content(prompt_parts)
-                # Legacy support tracking
                 track_cost("gemini")
                 
-                # Check for Self-Improving Skill Loop activation
-                # If code is generated or script is built successfully, auto-save as skill
                 response_text = response_gemini.text.strip()
                 if "def " in response_text or "import " in response_text:
                     from buddy_ai.core_extensions import save_successful_skill
                     save_successful_skill(question[:30], response_text, True)
                 return response_text
             except Exception as e:
-                print(f"[Agent Brain] Gemini fallback failed: {e}")
+                err_str = str(e)
+                if "404" in err_str:
+                    print(f"[Agent Brain Error] Gemini API Model Not Found (404): {err_str}")
+                elif "401" in err_str or "API_KEY_INVALID" in err_str:
+                    print(f"[Agent Brain Error] Gemini API Invalid Key (401): {err_str}")
+                elif "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower():
+                    print(f"[Agent Brain Error] Gemini API Quota Exceeded (429): {err_str}")
+                else:
+                    print(f"[Agent Brain Error] Gemini fallback failed: {err_str}")
                 gemini_failed = True
         else:
+            print("[Agent Brain Error] No GOOGLE_AI_KEY or GEMINI_API_KEY configured in environment.")
             gemini_failed = True
             
         if gemini_failed:
