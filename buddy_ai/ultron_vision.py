@@ -1,9 +1,5 @@
 import cv2
 import mediapipe as mp
-try:
-    import mediapipe.python.solutions as mp_solutions
-except ImportError:
-    import mediapipe.solutions as mp_solutions
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 import multiprocessing
@@ -29,10 +25,6 @@ class UltronVision(multiprocessing.Process):
             url = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task"
             urllib.request.urlretrieve(url, model_path)
             print("[Ultron Vision] Download Complete.")
-
-        self.mp_hands = mp_solutions.hands
-        self.mp_drawing = mp_solutions.drawing_utils
-        self.mp_face_mesh = mp_solutions.face_mesh
         
         # Audio Volume Setup (PyCaw)
         try:
@@ -45,21 +37,6 @@ class UltronVision(multiprocessing.Process):
         except Exception as e:
             print(f"[Ultron Vision] Warning: PyCaw volume control disabled. {e}")
             self.volume = None
-        
-        # Initialize Hand Tracking
-        self.hands = self.mp_hands.Hands(
-            max_num_hands=2,
-            min_detection_confidence=0.7,
-            min_tracking_confidence=0.7
-        )
-        
-        # Initialize Face Mesh (for Iris/Eye tracking)
-        self.face_mesh = self.mp_face_mesh.FaceMesh(
-            max_num_faces=1,
-            refine_landmarks=True,
-            min_detection_confidence=0.7,
-            min_tracking_confidence=0.7
-        )
 
         base_options = python.BaseOptions(model_asset_path=model_path)
         options = vision.HandLandmarkerOptions(
