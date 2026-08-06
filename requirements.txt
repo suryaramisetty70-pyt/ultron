@@ -1,0 +1,13 @@
+opencv-python==4.10.0.84
+faster-whisper
+piper-tts
+torch
+silero-vad
+mediapipe
+pyautogui
+requests
+chromadb
+PyQt6
+pygame
+vosk
+sounddevice

@@ -208,10 +208,18 @@ class UltronVision(multiprocessing.Process):
                                 # Looking DOWN -> Scroll DOWN
                                 pyautogui.scroll(-40)
 
-            cv2.imshow("Ultron Vision (Gestures + Gaze)", frame)
-            
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
+            try:
+                cv2.imshow("Ultron Vision (Gestures + Gaze)", frame)
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
+            except Exception as gui_err:
+                # Log once if GUI backend is unavailable and run vision in headless mode
+                if not hasattr(self, '_gui_warned'):
+                    print(f"[Ultron Vision] GUI display warning: {gui_err}. Continuing in headless background mode.")
+                    self._gui_warned = True
 
         self.cap.release()
-        cv2.destroyAllWindows()
+        try:
+            cv2.destroyAllWindows()
+        except Exception:
+            pass
