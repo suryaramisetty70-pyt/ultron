@@ -28,6 +28,9 @@ class UltronVision(multiprocessing.Process):
         
         # Audio Volume Setup (PyCaw)
         try:
+            from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+            from comtypes import CLSCTX_ALL
+            from ctypes import cast, POINTER
             devices = AudioUtilities.GetSpeakers()
             interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
             self.volume = cast(interface, POINTER(IAudioEndpointVolume))
@@ -35,7 +38,6 @@ class UltronVision(multiprocessing.Process):
             self.minVol = volRange[0]
             self.maxVol = volRange[1]
         except Exception as e:
-            print(f"[Ultron Vision] Warning: PyCaw volume control disabled. {e}")
             self.volume = None
 
         base_options = python.BaseOptions(model_asset_path=model_path)
@@ -47,6 +49,11 @@ class UltronVision(multiprocessing.Process):
             min_tracking_confidence=0.7
         )
         detector = vision.HandLandmarker.create_from_options(options)
+
+        try:
+            self.face_mesh = mp.solutions.face_mesh.FaceMesh(refine_landmarks=True)
+        except Exception:
+            self.face_mesh = None
         
         # Screen dimensions using ctypes (bare metal, no lag)
         user32 = ctypes.windll.user32
@@ -71,13 +78,6 @@ class UltronVision(multiprocessing.Process):
         # Mouse event constants
         MOUSEEVENTF_LEFTDOWN = 0x0002
         MOUSEEVENTF_LEFTUP = 0x0004
-        MOUSEEVENTF_RIGHTDOWN = 0x0008
-        MOUSEEVENTF_RIGHTUP = 0x0010
-        
-        # State trackers for debouncing and dragging
-        is_left_clicking = False
-        is_right_clicking = False
-        is_double_clicking = False
         
         # Swipe tracking
         history_x = []
@@ -93,7 +93,6 @@ class UltronVision(multiprocessing.Process):
                 break
                 
             frame = cv2.flip(img, 1)
-            img_h, img_w, _ = frame.shape
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             
             mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
@@ -133,8 +132,6 @@ class UltronVision(multiprocessing.Process):
                         # PRIMARY HAND: MOUSE CONTROL
                         index_tip = hand_landmarks[8]
                         thumb_tip = hand_landmarks[4]
-                        middle_tip = hand_landmarks[12]
-                        ring_tip = hand_landmarks[16]
                         wrist = hand_landmarks[0]
                         
                         # Target screen coordinates (Tracking Index Finger)
@@ -158,104 +155,58 @@ class UltronVision(multiprocessing.Process):
                                 swipe_cooldown = 30
                                 history_x.clear()
                         
-                        # Only execute cursor move and click events if we are not in two-handed gesture modes
-                        if not is_two_handed:
-                            # Apply Exponential Moving Average (EMA) for butter-smooth movement
-                            if smooth_x == 0 and smooth_y == 0:
-                                smooth_x, smooth_y = target_x, target_y
-                            else:
-                                smooth_x = smooth_x + (target_x - smooth_x) * smoothing_factor
-                                smooth_y = smooth_y + (target_y - smooth_y) * smoothing_factor
-                            
-                            # INSTANT BARE-METAL MOUSE MOVE
-                            user32.SetCursorPos(int(smooth_x), int(smooth_y))
+                        # Exponential Smoothing (Anti-jitter)
+                        smooth_x = (1 - smoothing_factor) * smooth_x + smoothing_factor * target_x
+                        smooth_y = (1 - smoothing_factor) * smooth_y + smoothing_factor * target_y
+                        
+                        ctypes.windll.user32.SetCursorPos(int(smooth_x), int(smooth_y))
+                        
+                        # Pinch Detection (Thumb + Index Tip) -> Click
+                        dist = self.calculate_distance(index_tip, thumb_tip)
+                        if dist < 0.05: # Pinch threshold
+                            if not is_clicking:
+                                ctypes.windll.user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+                                is_clicking = True
+                        else:
+                            if is_clicking:
+                                ctypes.windll.user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+                                is_clicking = False
                                 
-                            dist_left = self.calculate_distance(index_tip, thumb_tip)
-                            dist_right = self.calculate_distance(middle_tip, thumb_tip)
-                            dist_double = self.calculate_distance(ring_tip, thumb_tip)
-                            
-                            # GRAB & DRAG (Index + Thumb) OR PHYSICAL DESK TOUCH (Bottom 15% of camera frame)
-                            if dist_left < 0.05 or index_tip.y > 0.85:
-                                if not is_left_clicking:
-                                    user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
-                                    is_left_clicking = True
-                            else:
-                                if is_left_clicking:
-                                    user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
-                                    is_left_clicking = False
-
-                            # RIGHT CLICK (Middle + Thumb)
-                            if dist_right < 0.05:
-                                if not is_right_clicking:
-                                    user32.mouse_event(MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, 0)
-                                    user32.mouse_event(MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0)
-                                    is_right_clicking = True
-                            else:
-                                is_right_clicking = False
-
-                            # DOUBLE CLICK (Ring + Thumb)
-                            if dist_double < 0.05:
-                                if not is_double_clicking:
-                                    user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
-                                    user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
-                                    time.sleep(0.05)
-                                    user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
-                                    user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
-                                    is_double_clicking = True
-                            else:
-                                is_double_clicking = False
-
                     elif hand_idx == 1 and self.volume:
-                        # SECONDARY HAND: AIR-VOLUME DIAL
+                        # SECONDARY HAND: VOLUME DIAL
                         index_tip = hand_landmarks[8]
                         thumb_tip = hand_landmarks[4]
                         dist = self.calculate_distance(index_tip, thumb_tip)
                         
-                        # Map distance (0.05 to 0.25) to volume (minVol to maxVol)
                         vol_setting = np.interp(dist, [0.05, 0.25], [self.minVol, self.maxVol])
                         try:
                             self.volume.SetMasterVolumeLevel(vol_setting, None)
                         except:
                             pass
-                        
-                        # Draw a volume bar for visual feedback
-                        vol_bar = np.interp(dist, [0.05, 0.25], [400, 150])
-                        vol_per = np.interp(dist, [0.05, 0.25], [0, 100])
-                        cv2.rectangle(frame, (50, 150), (85, 400), (0, 255, 0), 3)
-                        cv2.rectangle(frame, (50, int(vol_bar)), (85, 400), (0, 255, 0), cv2.FILLED)
-                        cv2.putText(frame, f'{int(vol_per)} %', (40, 450), cv2.FONT_HERSHEY_COMPLEX, 1, (0, 255, 0), 3)
 
             # --- PHASE 24: JARVIS EYE-POINTER (Gaze Tracking) ---
             # Process Face Mesh to find Irises
-            face_results = self.face_mesh.process(rgb_frame)
-            if face_results.multi_face_landmarks:
-                for face_landmarks in face_results.multi_face_landmarks:
-                    # Left Eye Landmarks: Top=159, Bottom=145, Iris Center=473
-                    left_iris_y = face_landmarks.landmark[473].y
-                    eye_top_y = face_landmarks.landmark[159].y
-                    eye_bottom_y = face_landmarks.landmark[145].y
-                    
-                    # Calculate vertical gaze ratio (0.0 = looking all the way up, 1.0 = looking down)
-                    eye_height = eye_bottom_y - eye_top_y
-                    if eye_height > 0:
-                        vertical_ratio = (left_iris_y - eye_top_y) / eye_height
+            if self.face_mesh:
+                face_results = self.face_mesh.process(rgb_frame)
+                if face_results.multi_face_landmarks:
+                    for face_landmarks in face_results.multi_face_landmarks:
+                        # Left Eye Landmarks: Top=159, Bottom=145, Iris Center=473
+                        left_iris_y = face_landmarks.landmark[473].y
+                        eye_top_y = face_landmarks.landmark[159].y
+                        eye_bottom_y = face_landmarks.landmark[145].y
                         
-                        # Trigger Scrolling based on Gaze
-                        if vertical_ratio < 0.35:
-                            # Looking UP -> Scroll UP
-                            pyautogui.scroll(40)
-                            cv2.putText(frame, "GAZE: SCROLL UP", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
-                        elif vertical_ratio > 0.65:
-                            # Looking DOWN -> Scroll DOWN
-                            pyautogui.scroll(-40)
-                            cv2.putText(frame, "GAZE: SCROLL DOWN", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
-                        else:
-                            cv2.putText(frame, "GAZE: CENTERED", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-
-                    # Draw Iris for visual feedback
-                    ih, iw, _ = frame.shape
-                    cx, cy = int(face_landmarks.landmark[473].x * iw), int(left_iris_y * ih)
-                    cv2.circle(frame, (cx, cy), 3, (0, 255, 255), -1)
+                        # Calculate vertical gaze ratio (0.0 = looking all the way up, 1.0 = looking down)
+                        eye_height = eye_bottom_y - eye_top_y
+                        if eye_height > 0:
+                            vertical_ratio = (left_iris_y - eye_top_y) / eye_height
+                            
+                            # Trigger Scrolling based on Gaze
+                            if vertical_ratio < 0.35:
+                                # Looking UP -> Scroll UP
+                                pyautogui.scroll(40)
+                            elif vertical_ratio > 0.65:
+                                # Looking DOWN -> Scroll DOWN
+                                pyautogui.scroll(-40)
 
             cv2.imshow("Ultron Vision (Gestures + Gaze)", frame)
             
@@ -263,6 +214,4 @@ class UltronVision(multiprocessing.Process):
                 break
 
         self.cap.release()
-        self.hands.close()
-        self.face_mesh.close()
         cv2.destroyAllWindows()
