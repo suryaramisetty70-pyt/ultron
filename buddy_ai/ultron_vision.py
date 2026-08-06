@@ -163,9 +163,15 @@ class UltronVision(multiprocessing.Process):
                         
                         ctypes.windll.user32.SetCursorPos(int(smooth_x), int(smooth_y))
                         
+                        # Draw visual tracking pointer on camera preview frame
+                        cx, cy = int(index_tip.x * img_w), int(index_tip.y * img_h)
+                        cv2.circle(frame, (cx, cy), 10, (255, 0, 255), cv2.FILLED)
+                        
                         # Pinch Detection (Thumb + Index Tip) -> Click
                         dist = self.calculate_distance(index_tip, thumb_tip)
-                        if dist < 0.05: # Pinch threshold
+                        if dist < 0.07: # Slightly higher pinch sensitivity for effortless clicks
+                            cv2.circle(frame, (cx, cy), 15, (0, 255, 0), cv2.FILLED)
+                            cv2.putText(frame, "CLICKING", (cx + 20, cy), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
                             if not is_clicking:
                                 ctypes.windll.user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
                                 is_clicking = True
