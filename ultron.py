@@ -205,7 +205,7 @@ def transcribe_audio(audio) -> str:
                 "temperature": "0.0",
                 "language": "en"
             }
-            response = requests.post("https://api.groq.com/openai/v1/audio/transcriptions", headers=headers, files=files, data=data, timeout=10)
+            response = requests.post("https://api.groq.com/openai/v1/audio/transcriptions", headers=headers, files=files, data=data, timeout=4)
     except Exception as e:
         print(f"[Auditory System] Groq request connection error: {e}")
         
@@ -1569,7 +1569,7 @@ Be concise and speak naturally like a real AI assistant."""
                 "https://api.groq.com/openai/v1/chat/completions",
                 headers=headers,
                 json=payload,
-                timeout=20
+                timeout=5
             )
             if response is not None and response.status_code == 200:
                 track_cost("groq")
