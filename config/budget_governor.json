@@ -1,0 +1,9 @@
+{
+    "daily_cost_limit": 1.5,
+    "current_daily_cost": 0.0006,
+    "last_reset_date": "2026-08-06",
+    "api_costs": {
+        "groq": 0.00015,
+        "gemini": 7.5e-05
+    }
+}
