@@ -1,5 +1,9 @@
 import cv2
 import mediapipe as mp
+try:
+    import mediapipe.python.solutions as mp_solutions
+except ImportError:
+    import mediapipe.solutions as mp_solutions
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 import multiprocessing
@@ -26,9 +30,9 @@ class UltronVision(multiprocessing.Process):
             urllib.request.urlretrieve(url, model_path)
             print("[Ultron Vision] Download Complete.")
 
-        self.mp_hands = mp.solutions.hands
-        self.mp_drawing = mp.solutions.drawing_utils
-        self.mp_face_mesh = mp.solutions.face_mesh
+        self.mp_hands = mp_solutions.hands
+        self.mp_drawing = mp_solutions.drawing_utils
+        self.mp_face_mesh = mp_solutions.face_mesh
         
         # Audio Volume Setup (PyCaw)
         try:

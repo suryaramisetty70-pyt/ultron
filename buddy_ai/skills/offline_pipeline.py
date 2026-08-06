@@ -17,14 +17,13 @@ _whisper_model_instance = None
 def get_whisper_model():
     global _whisper_model_instance
     if _whisper_model_instance is None:
-        print("[Offline Pipeline] Initializing Faster-Whisper (Large-V3) model...")
-        # Auto-fallback to cpu or cuda depending on system
+        print("[Offline Pipeline] Initializing Faster-Whisper model...")
         device = "cuda" if torch.cuda.is_available() else "cpu"
         compute_type = "float16" if device == "cuda" else "int8"
         try:
-            _whisper_model_instance = WhisperModel("large-v3", device=device, compute_type=compute_type)
+            _whisper_model_instance = WhisperModel("medium", device=device, compute_type=compute_type)
         except Exception as e:
-            print(f"[Offline Pipeline] Fallback to base model due to memory constraint: {e}")
+            print(f"[Offline Pipeline] Fallback to base model: {e}")
             _whisper_model_instance = WhisperModel("base", device="cpu", compute_type="int8")
     return _whisper_model_instance
 
