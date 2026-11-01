@@ -8,6 +8,10 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import warnings
 warnings.filterwarnings("ignore")
 
+# Load environment variables FIRST before any module reads os.environ
+from dotenv import load_dotenv
+load_dotenv(override=True)
+
 import asyncio
 import edge_tts
 import pygame
@@ -190,8 +194,9 @@ def transcribe_audio(audio) -> str:
         f.write(audio.get_wav_data())
         temp_audio_path = f.name
         
+    active_groq_key = (os.environ.get("GROQ_API_KEY", "") or GROQ_API_KEY).strip()
     headers = {
-        "Authorization": f"Bearer {GROQ_API_KEY.strip()}"
+        "Authorization": f"Bearer {active_groq_key}"
     }
     
     response = None
@@ -307,8 +312,13 @@ def record_audio_vad(timeout=5, phrase_time_limit=10):
     audio_frames = []
     triggered = False
     
-    num_padding_frames = int(1000 / frame_duration_ms)  # 1 second of silence to stop
+    # 300ms pre-speech buffer ensures first syllable is never chopped off
+    num_padding_frames = int(300 / frame_duration_ms)  # 10 frames
     ring_buffer = collections.deque(maxlen=num_padding_frames)
+    
+    # 600ms silence buffer to detect when speaker is finished without hanging
+    num_silence_frames = int(600 / frame_duration_ms)  # 20 frames
+    silence_buffer = collections.deque(maxlen=num_silence_frames)
     
     q = queue.Queue()
     
@@ -339,7 +349,7 @@ def record_audio_vad(timeout=5, phrase_time_limit=10):
             if not triggered:
                 ring_buffer.append((frame, is_speech))
                 num_voiced = len([f for f, speech in ring_buffer if speech])
-                if num_voiced > 0.6 * ring_buffer.maxlen:  # 60% of ring buffer is voiced
+                if num_voiced >= 3:  # Fast trigger: ~90ms of real voice starts capture
                     triggered = True
                     print("\n[Auditory System] Speech detected...")
                     for f, speech in ring_buffer:
@@ -347,9 +357,9 @@ def record_audio_vad(timeout=5, phrase_time_limit=10):
                     ring_buffer.clear()
             else:
                 audio_frames.append(frame)
-                ring_buffer.append((frame, is_speech))
-                num_unvoiced = len([f for f, speech in ring_buffer if not speech])
-                if num_unvoiced > 0.9 * ring_buffer.maxlen:  # 90% of ring buffer is silence
+                silence_buffer.append(is_speech)
+                num_unvoiced = len([s for s in silence_buffer if not s])
+                if len(silence_buffer) == silence_buffer.maxlen and num_unvoiced >= int(0.75 * silence_buffer.maxlen):
                     print("[Auditory System] Silence detected. Stopping recording.")
                     break
                     
@@ -1478,8 +1488,9 @@ TOOLS = [
 # GROQ AI (AGENTIC BRAIN WITH 15 SKILLS)
 # ==================================================
 def ask_ai(question, memory_context=""):
+    active_groq_key = (os.environ.get("GROQ_API_KEY", "") or GROQ_API_KEY).strip()
     headers = {
-        "Authorization": f"Bearer {GROQ_API_KEY.strip()}",
+        "Authorization": f"Bearer {active_groq_key}",
         "Content-Type": "application/json"
     }
 

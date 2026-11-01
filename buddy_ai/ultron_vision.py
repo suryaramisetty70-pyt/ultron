@@ -95,7 +95,17 @@ class UltronVision(multiprocessing.Process):
                 break
                 
             frame = cv2.flip(img, 1)
+            img_h, img_w, _ = frame.shape
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            
+            # Active Air-Mouse Zone (Comfort Bounding Box):
+            # Maps central 60% of camera field-of-view to 100% of physical desktop
+            box_x1, box_x2 = 0.20, 0.80
+            box_y1, box_y2 = 0.20, 0.75
+            cv2.rectangle(frame, (int(box_x1 * img_w), int(box_y1 * img_h)), 
+                          (int(box_x2 * img_w), int(box_y2 * img_h)), (120, 120, 120), 1)
+            cv2.putText(frame, "ACTIVE AIR-MOUSE ZONE", (int(box_x1 * img_w), int(box_y1 * img_h) - 6), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 200), 1)
             
             mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
             detection_result = detector.detect(mp_image)
@@ -136,9 +146,11 @@ class UltronVision(multiprocessing.Process):
                         thumb_tip = hand_landmarks[4]
                         wrist = hand_landmarks[0]
                         
-                        # Target screen coordinates (Tracking Index Finger)
-                        target_x = int(index_tip.x * screen_w)
-                        target_y = int(index_tip.y * screen_h)
+                        # Target screen coordinates with ergonomic bounded normalization
+                        norm_x = np.clip((index_tip.x - box_x1) / (box_x2 - box_x1), 0.0, 1.0)
+                        norm_y = np.clip((index_tip.y - box_y1) / (box_y2 - box_y1), 0.0, 1.0)
+                        target_x = int(norm_x * screen_w)
+                        target_y = int(norm_y * screen_h)
                         
                         # Swipe detection logic (track wrist movement)
                         history_x.append(wrist.x)
@@ -157,25 +169,28 @@ class UltronVision(multiprocessing.Process):
                                 swipe_cooldown = 30
                                 history_x.clear()
                         
-                        # Exponential Smoothing (Anti-jitter)
-                        smooth_x = (1 - smoothing_factor) * smooth_x + smoothing_factor * target_x
-                        smooth_y = (1 - smoothing_factor) * smooth_y + smoothing_factor * target_y
+                        # Pinch Detection (Thumb + Index Tip) -> Click
+                        dist = self.calculate_distance(index_tip, thumb_tip)
+                        is_pinching = dist < 0.075
+
+                        # Click stabilization: freeze cursor motion slightly while pinching to avoid slip
+                        effective_smoothing = 0.10 if is_pinching else smoothing_factor
+                        smooth_x = (1 - effective_smoothing) * smooth_x + effective_smoothing * target_x
+                        smooth_y = (1 - effective_smoothing) * smooth_y + effective_smoothing * target_y
                         
                         ctypes.windll.user32.SetCursorPos(int(smooth_x), int(smooth_y))
                         
                         # Draw visual tracking pointer on camera preview frame
                         cx, cy = int(index_tip.x * img_w), int(index_tip.y * img_h)
-                        cv2.circle(frame, (cx, cy), 10, (255, 0, 255), cv2.FILLED)
                         
-                        # Pinch Detection (Thumb + Index Tip) -> Click
-                        dist = self.calculate_distance(index_tip, thumb_tip)
-                        if dist < 0.07: # Slightly higher pinch sensitivity for effortless clicks
-                            cv2.circle(frame, (cx, cy), 15, (0, 255, 0), cv2.FILLED)
-                            cv2.putText(frame, "CLICKING", (cx + 20, cy), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                        if is_pinching:
+                            cv2.circle(frame, (cx, cy), 16, (0, 255, 0), cv2.FILLED)
+                            cv2.putText(frame, "CLICK", (cx + 15, cy - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
                             if not is_clicking:
                                 ctypes.windll.user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
                                 is_clicking = True
                         else:
+                            cv2.circle(frame, (cx, cy), 10, (255, 0, 255), cv2.FILLED)
                             if is_clicking:
                                 ctypes.windll.user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
                                 is_clicking = False
